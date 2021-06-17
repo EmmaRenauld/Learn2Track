@@ -41,3 +41,9 @@ cat $subject_list
 bash $my_bash_scripts/2_organize_from_tractoflow.sh $database_folder $subject_list
 tree -d -L 2 $database_folder
 
+#########
+# 3. Organize from recobundles
+#########
+bash $my_bash_scripts/3_organize_from_recobundles.sh $database_folder RecobundlesX/multi_bundles $subject_list
+tree -d -L 2 $database_folder
+#HCP: tree $database_folder/dwi_ml_ready/sub-100206
