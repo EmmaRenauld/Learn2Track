@@ -89,5 +89,5 @@ setup(
     # "scripts" keyword. Entry points provide cross-platform support and allow
     # pip to create the appropriate form of executable for the target platform.
     entry_points={},
-    scripts= glob.glob("scripts/*.sh")
+    scripts=glob.glob("scripts/*.py") + glob.glob("scripts/*.sh")
 )

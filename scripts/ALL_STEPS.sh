@@ -15,7 +15,7 @@ data_root="/home/local/USHERBROOKE/rene2201/Documents"
 my_bash_scripts="/home/renaulde/my_applications/learn2track/USER_SCRIPTS/"
 data_root="/home/renaulde/projects/rrg-descotea/renaulde"
 
-
+study=fibercup
 study=ismrm2015_noArtefact
 study=ismrm2015_basic
 study=neher99_noArtefact
@@ -25,7 +25,7 @@ study=tractoinferno
 study=test_retest
 
 #########
-# A.1. Find folders and subject lists
+# Find folders and subject lists
 #########
 
 # Load "global" variables: the names of my folders
@@ -36,7 +36,7 @@ study=test_retest
 
 
 # Printing infos on current study
-    echo -e "=========RUNNING LEARN2TRACK PREPARATION\n" \
+    echo -e "=========LEARN2TRACK\n" \
          "     Chosen study: $study \n"         \
          "     Input data: $database_folder \n" \
          "     Subject list: $subjects_list \n"  \
@@ -46,7 +46,7 @@ study=test_retest
 
 
 #########
-# A.2. Organize from tractoflow
+# A.1. Organize from tractoflow
 #########
     rm -r $database_folder/dwi_ml_ready
     bash $my_bash_scripts/organize_from_tractoflow.sh $database_folder $subjects_list
@@ -56,7 +56,7 @@ study=test_retest
 
 
 #########
-# A.3. Organize from recobundles
+# A.2. Organize from recobundles
 #########
     bash $my_bash_scripts/organize_from_recobundles.sh $database_folder RecobundlesX/multi_bundles $subjects_list
 
@@ -106,10 +106,19 @@ study=test_retest
     # Preparing hdf5.
     create_hdf5_dataset.py --force --name $name --std_mask $mask_for_standardization \
         $option_bundles $option_logging --space $space $database_folder $config_file \
-        $training_subjs $validation_subjs
+        $training_subjs $validation_subjs --enforce_bundles_presence True
 
 
     dwi_ml_code=/home/local/USHERBROOKE/rene2201/my_applications/scil_vital/dwi_ml
     python -m memory_profiler $dwi_ml_code/scripts_python/create_hdf5_dataset.py --force --name $name --std_mask $mask_for_standardization \
         $option_bundles $option_logging --space $space $database_folder $config_file \
         $training_subjs $validation_subjs
+
+
+############
+# B.2. Train model
+############
+
+    yaml_file=~/my_applications/scil_vital/learn2track/scripts/training_parameters_ismrm2015_noArtefact.yaml
+
+    train_model.py $yaml_file
