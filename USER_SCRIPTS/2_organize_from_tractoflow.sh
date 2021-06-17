@@ -1,4 +1,4 @@
-# Learn2track: Copied from dwi_ml on 2021-05-25, PR # (not yet approved).
+#!/bin/bash
 
 ###############################################################################
 # Your tree should look like:                                                 #
@@ -31,6 +31,8 @@
 # We suppose that you have a "preprocessed" folder that contains RecobundlesX #
 # results folder for each subject.                                            #
 ###############################################################################
+
+echo "Tractogram: PFT tracking for now (modified from dwi_ml)"
 
 # =====================================#
 #  VARIABLES TO BE DEFINED BY THE USER #
@@ -73,6 +75,7 @@ fi
 
 # Reorganizing all subjects
 echo "Checks passed. Now reorganizing subjects"
+
 subjects=$(<$subject_list)
 for subjid in $subjects
 do
@@ -103,12 +106,12 @@ do
 
   # masks:
   if [ ! -f $subj_preprocessed_folder/Segment_Tissues/${subjid}__mask_wm.nii.gz ]; then echo "Subject's WM mask not found"; exit 1; fi
-  ln -s $subj_preprocessed_folder/Segment_Tissues/${subjid}__mask_wm.nii.gz $subj_folder/masks/wm.nii.gz
+  ln -s $subj_preprocessed_folder/Segment_Tissues/${subjid}__mask_wm.nii.gz $subj_folder/masks/wm_mask.nii.gz
 
   # bundles:
-  if [ ! -f $subj_preprocessed_folder/Tracking/${subjid}__tracking.trk ]; then echo "Subject's WM mask not found"; exit 1; fi
-  ln -s $subj_preprocessed_folder/Tracking/${subjid}__tracking.trk $subj_folder/bundles/tractoflow_wholebrain.trk
+  if [ ! -f $subj_preprocessed_folder/PFT_Tracking/${subjid}__pft_tracking_filtered_20_200.trk ]; then echo "Subject's tractogram not found"; exit 1; fi
+  ln -s $subj_preprocessed_folder/*Tracking/${subjid}__pft_tracking_filtered_20_200.trk $subj_folder/bundles/tractoflow_wholebrain.trk
 
 done
 
-echo "We have organized tractoflow results into dwi_ml (dwi, anat, masks)".
+echo "We have organized tractoflow results from processed into dwi_ml_ready (dwi, anat, masks)"
