@@ -2,17 +2,10 @@
 # -*- coding: utf-8 -*-
 
 """
-           Train a model for your favorite experiment
+Train a model for Learn2Track
 
-Remove or add parameters to fit your needs. You should change your yaml file
-accordingly.
-
-- Change init_dataset() if the MultiSubjectDataset doesn't fit your needs
-- Change init_sampler() for the BatchSampler version that fits your needs
-- Implement build_model()
-- Change the DWIMLTrainer if it doesn't fit your needs.
+See and example of the yaml file in the parameters folder.
 """
-
 import argparse
 import logging
 import os
@@ -20,24 +13,39 @@ from os import path
 
 import yaml
 
+from dwi_ml.data.dataset.multi_subject_containers import init_dataset
 from dwi_ml.experiment.monitoring import EarlyStoppingError
 from dwi_ml.experiment.timer import Timer
-from dwi_ml.model.main_models import ModelAbstract
+from dwi_ml.model.batch_samplers import (
+    BatchStreamlinesSampler1IPV as BatchSampler)
+from dwi_ml.model.direction_getter_models import keys_to_direction_getters
 from dwi_ml.training.checks_for_experiment_parameters import (
     check_all_experiment_parameters, check_logging_level)
-from dwi_ml.training.trainers import (DWIMLTrainer)
 
-# These are model-dependant. Choose the best classes and functions for you
-# 1. Change this init_dataset function if you prefer! This loads either a
-#    MultiSubjectDataset or a LazyMultiSubjectDataset.
-from dwi_ml.data.dataset.multi_subject_containers import init_dataset
-# 2. Change this init_batch_sampler if you prefer!
-#    This is one possibility, others could be implemented.
-from dwi_ml.model.batch_samplers import (
-    BatchSequencesSamplerOneInputVolume as ChosenBatchSampler)
+from Learn2Track.model.embeddings import keys_to_embeddings
+from Learn2Track.model.learn2track_model import Learn2TrackModel
+from Learn2Track.model.stacked_rnn import StackedRNN
+from Learn2Track.training.trainers import Learn2TrackTrainer
 
+# Paramters         à ajouter dans le yaml??
 
-# 3. Implement the build_model function below
+# Previous dir embedding
+KEY_PREV_DIR_EMBEDDING = 'nn_embedding'
+NB_PREVIOUS_DIRS = 3
+PREV_DIR_EMBEDDING_SIZE = 8
+NAN_TO_NUM = 0
+
+# Input embedding
+KEY_INPUT_EMBEDDING = 'no_embedding'
+INPUT_EMBEDDING_SIZE_RATIO = 1  # Ex: 1 means input size is not modified.
+
+# Stacked RNN
+RNN_KEY = 'lstm'
+RNN_LAYER_SIZES = [100, 100]
+DROPOUT = 0.4
+
+# Direction getter
+KEY_DIRECTION_GETTER = 'cosine-regression'
 
 
 def parse_args():
@@ -71,7 +79,35 @@ def parse_args():
 
 
 def build_model(input_size, **_):
-    model = ModelAbstract()
+    # 1. Previous dir embedding
+    cls = keys_to_embeddings[KEY_PREV_DIR_EMBEDDING]
+    prev_dir_embegging_model = cls(input_size=NB_PREVIOUS_DIRS * 3,
+                                   output_size=PREV_DIR_EMBEDDING_SIZE,
+                                   nan_to_num=NAN_TO_NUM)
+
+    # 2. Input embedding
+    cls = keys_to_embeddings[KEY_INPUT_EMBEDDING]
+    input_embedding_size = input_size * INPUT_EMBEDDING_SIZE_RATIO
+    input_embedding_model = cls(input_size=input_size,
+                                output_size=input_embedding_size)
+
+    # 3. Stacked RNN
+    rnn_input_size = PREV_DIR_EMBEDDING_SIZE + input_embedding_size
+    rnn_model = StackedRNN(RNN_KEY, rnn_input_size, RNN_LAYER_SIZES,
+                           use_skip_connections=True,
+                           use_layer_normalization=True,
+                           dropout=DROPOUT)
+
+    # 4. Direction getter
+    cls = keys_to_direction_getters[KEY_DIRECTION_GETTER]
+    direction_getter_model = cls(rnn_model.output_size)
+
+    # 5. Putting all together
+    model = Learn2TrackModel(
+        previous_dir_embedding_model=prev_dir_embegging_model,
+        input_embedding_model=input_embedding_model,
+        rnn_model=rnn_model,
+        direction_getter_model=direction_getter_model)
 
     return model
 
@@ -89,10 +125,10 @@ def prepare_data_and_model(train_data_params, valid_data_params,
     with Timer("\n\nPreparing batch samplers with volume: {}"
                        .format(training_dataset.volume_groups[0]),
                newline=True, color='green'):
-        training_batch_sampler = ChosenBatchSampler(
+        training_batch_sampler = BatchSampler(
             training_dataset, training_dataset.streamline_group,
             training_dataset.volume_groups[0], **train_sampler_params)
-        validation_batch_sampler = ChosenBatchSampler(
+        validation_batch_sampler = BatchSampler(
             validation_dataset, validation_dataset.streamline_group,
             validation_dataset.volume_groups[0], **valid_sampler_params)
 
@@ -132,7 +168,8 @@ def main():
         # Loading checkpoint
         print("Experiment checkpoint folder exists, resuming experiment!")
         checkpoint_state = \
-            DWIMLTrainer.load_params_from_checkpoint(args.experiment_path)
+            Learn2TrackTrainer.load_params_from_checkpoint(
+                args.experiment_path)
         if args.parameters_filename:
             logging.warning('Resuming experiment from checkpoint. Yaml file '
                             'option was not necessary and will not be used!')
@@ -141,8 +178,8 @@ def main():
                             'option was not necessary and will not be used!')
 
         # Stop now if early stopping was triggered.
-        DWIMLTrainer.check_early_stopping(checkpoint_state,
-                                          args.override_checkpoint_patience)
+        Learn2TrackTrainer.check_early_stopping(
+            checkpoint_state, args.override_checkpoint_patience)
 
         # Prepare the trainer from checkpoint_state
         (training_batch_sampler, validation_batch_sampler,
@@ -156,7 +193,7 @@ def main():
         # Instantiate trainer
         with Timer("\n\nPreparing trainer",
                    newline=True, color='red'):
-            trainer = DWIMLTrainer.init_from_checkpoint(
+            trainer = Learn2TrackTrainer.init_from_checkpoint(
                 training_batch_sampler, validation_batch_sampler, model,
                 checkpoint_state)
     else:
@@ -189,17 +226,17 @@ def main():
         # Instantiate trainer
         with Timer("\n\nPreparing trainer",
                    newline=True, color='red'):
-            trainer = DWIMLTrainer(training_batch_sampler,
-                                   validation_batch_sampler, model,
-                                   **all_params)
+            trainer = Learn2TrackTrainer(training_batch_sampler,
+                                         validation_batch_sampler, model,
+                                         **all_params)
 
     #####
     # Run (or continue) the experiment
     #####
     try:
-        with Timer("\n\n****** Training!!! ********",
+        with Timer("\n\n****** Running model!!! ********",
                    newline=True, color='magenta'):
-            trainer.train_validate_and_save_loss()
+            trainer.run_model()
     except EarlyStoppingError as e:
         print(e)
 

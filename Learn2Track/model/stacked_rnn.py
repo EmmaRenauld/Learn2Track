@@ -6,6 +6,8 @@ import torch
 from torch import Tensor
 from torch.nn.utils.rnn import PackedSequence
 
+from dwi_ml.utils import format_dict_to_str
+
 KEY_TO_RNN_CLASS = {'lstm': torch.nn.LSTM,
                     'gru': torch.nn.GRU}
 
@@ -104,8 +106,8 @@ class StackedRNN(torch.nn.Module):
             if self.use_skip_connections:
                 last_layer_size += self.input_size
 
-        logging.debug('StackedRNN instantiated with attributes: {}'
-                      .format(self.attributes))
+        logging.debug('StackedRNN instantiated with attributes: \n' +
+                      format_dict_to_str(self.attributes) + "\n")
 
     @property
     def attributes(self):

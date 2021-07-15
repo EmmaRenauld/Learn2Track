@@ -64,15 +64,6 @@ study=test_retest
 # ===========================================================================
 
 #########
-# B.0 Find variables
-#########
-# Load "global" variables: the names of my folders
-    source $my_bash_scripts/my_variables.sh $data_root
-    eval database_folder=\${database_folder_$study}
-    eval subjects_list=\${subjects_list_$study}
-    cd $database_folder
-
-#########
 # B.1. Create hdf5 dataset
 #########
     # Choosing the parameters for this study
@@ -107,13 +98,6 @@ study=test_retest
     create_hdf5_dataset.py --force --name $name --std_mask $mask_for_standardization \
         $option_bundles $option_logging --space $space $database_folder $config_file \
         $training_subjs $validation_subjs --enforce_bundles_presence True
-
-
-    dwi_ml_code=/home/local/USHERBROOKE/rene2201/my_applications/scil_vital/dwi_ml
-    python -m memory_profiler $dwi_ml_code/scripts_python/create_hdf5_dataset.py --force --name $name --std_mask $mask_for_standardization \
-        $option_bundles $option_logging --space $space $database_folder $config_file \
-        $training_subjs $validation_subjs
-
 
 ############
 # B.2. Train model
