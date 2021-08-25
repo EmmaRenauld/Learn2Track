@@ -29,7 +29,7 @@ study=test_retest
 #########
 
 # Load "global" variables: the names of my folders
-    source $my_bash_scripts/1_my_variables.sh $data_root
+    source $my_bash_scripts/my_variables.sh $data_root
     eval database_folder=\${database_folder_$study}
     eval subjects_list=\${subjects_list_$study}
     cd $database_folder
@@ -49,7 +49,7 @@ study=test_retest
 # A.2. Organize from tractoflow
 #########
     rm -r $database_folder/dwi_ml_ready
-    bash $my_bash_scripts/2_organize_from_tractoflow.sh $database_folder $subjects_list
+    bash $my_bash_scripts/organize_from_tractoflow.sh $database_folder $subjects_list
     tree -d -L 2 $database_folder
     first_subj=`ls $database_folder/dwi_ml_ready | awk -F' ' '{ print $1}'`
     tree $database_folder/dwi_ml_ready/$first_subj
@@ -58,7 +58,7 @@ study=test_retest
 #########
 # A.3. Organize from recobundles
 #########
-    bash $my_bash_scripts/3_organize_from_recobundles.sh $database_folder RecobundlesX/multi_bundles $subjects_list
+    bash $my_bash_scripts/organize_from_recobundles.sh $database_folder RecobundlesX/multi_bundles $subjects_list
 
 
 # ===========================================================================
@@ -67,7 +67,7 @@ study=test_retest
 # B.0 Find variables
 #########
 # Load "global" variables: the names of my folders
-    source $my_bash_scripts/1_my_variables.sh $data_root
+    source $my_bash_scripts/my_variables.sh $data_root
     eval database_folder=\${database_folder_$study}
     eval subjects_list=\${subjects_list_$study}
     cd $database_folder
