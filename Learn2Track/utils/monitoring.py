@@ -1,7 +1,9 @@
+# -*- coding: utf-8 -*-
+
 """Monitoring utilities"""
 import logging
-import sys
 from time import time
+
 
 COLOR_CODES = {
     'black': '\u001b[30m',
@@ -36,5 +38,6 @@ class Timer:
         logging.info(txt_line)
 
     def __exit__(self, type, value, tb):
-        txt_line = self.txt + " done in {:.2f} sec.".format(time() - self.start)
+        txt_line = self.txt + " done in {:.2f} sec.".format(time() -
+                                                            self.start)
         logging.info(txt_line)
