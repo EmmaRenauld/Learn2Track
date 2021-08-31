@@ -76,10 +76,12 @@ input:
   # num_previous_dirs: int
   #     Concatenate X previous streamline directions to the input vector. Null
   #     is equivalent to 0.
-  num_previous_dirs: null
+  num_previous_dirs: 1
 
 model:
   # Add your model's parameters
+  # toDo add this to checks and to trainer
+  clip_grad: null
 
 training:
   epochs:
@@ -96,7 +98,7 @@ training:
     #     Number of streamline points per batch. Suggestion: 20000.
     #     NOTE: Actual batch sizes might be different than `batch_size`
     #     depending on chosen data augmentation.
-    size: 200
+    size: 2000
     # n_subjects_per_batch: int
     #     Maximum number of different subjects from which to load data in each
     #     batch. This should help avoid loading too many inputs in memory,

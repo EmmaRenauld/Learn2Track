@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-import logging
 from typing import List, Union
 
 import torch
 from torch import Tensor
 from torch.nn.utils.rnn import (PackedSequence, pack_sequence)
+
+from dwi_ml.model.main_models import ModelAbstract
 
 from Learn2Track.utils.packed_sequences import (unpack_sequence,
                                                 unpack_tensor_from_indices)
@@ -14,7 +15,7 @@ Data needs to be usable as torch tensors or as packed sequences.
 """
 
 
-class EmbeddingAbstract(torch.nn.Module):
+class EmbeddingAbstract(ModelAbstract):
     def __init__(self, input_size: int, output_size: int = 128):
         """
         Params
@@ -37,6 +38,11 @@ class EmbeddingAbstract(torch.nn.Module):
             'output_size': self.output_size,
         }
         return attributes
+
+    @property
+    def hyperparameters(self):
+        hyperparameters = {}
+        return hyperparameters
 
     def forward(self, inputs: Union[Tensor, List[Tensor], PackedSequence]):
         """
@@ -77,23 +83,30 @@ class NNEmbedding(EmbeddingAbstract):
         self.nan_to_num = nan_to_num
 
     @property
-    def attributes(self):
-        hyperparameters = super().attributes
-        other_parameters = {
+    def hyperparameters(self):
+        hyperparameters = {
             'nan_to_num': self.nan_to_num
         }
-        return hyperparameters.update(other_parameters)
+        return hyperparameters
+
+    @property
+    def attributes(self):
+        attrs = super().attributes  # type: dict
+        attrs.update({
+            'type': 'NN'
+        })
+        return attrs
 
     def forward(self, inputs: Union[Tensor, List[Tensor], PackedSequence]):
         """See super."""
-        logging.debug("Embedding: running Neural networks' forward")
+        self.log.debug("Embedding: running Neural networks' forward")
         packed_sequence = []
         if isinstance(inputs, list):
             if isinstance(inputs[0], torch.Tensor):
                 nb_s = len(inputs)
-                logging.debug("input is a list of {} tensors (probably "
-                              "corresponding to the number of streamlines). "
-                              "Packing, we will unpack later.".format(nb_s))
+                self.log.debug("input is a list of {} tensors (probably "
+                               "corresponding to the number of streamlines). "
+                               "Packing, we will unpack later.".format(nb_s))
                 packed_sequence = pack_sequence(inputs, enforce_sorted=False)
                 inputs_tensor = packed_sequence.data
             else:
@@ -114,7 +127,7 @@ class NNEmbedding(EmbeddingAbstract):
         result = self.relu(result)
 
         if isinstance(inputs, list):
-            logging.debug("Sending packed_data back to list.")
+            self.log.debug("Sending packed_data back to list.")
             # The total number of timepoints should have changed.
             assert packed_sequence.data.shape[0] == result.shape[0]
 
@@ -123,7 +136,7 @@ class NNEmbedding(EmbeddingAbstract):
             indices = unpack_sequence(packed_sequence, get_indices_only=True)
             result = unpack_tensor_from_indices(result, indices)
         elif isinstance(inputs, PackedSequence):
-            logging.debug("Packing results")
+            self.log.debug("Packing results")
             result = PackedSequence(result, inputs.batch_sizes,
                                     inputs.sorted_indices,
                                     inputs.unsorted_indices)
@@ -131,20 +144,32 @@ class NNEmbedding(EmbeddingAbstract):
 
 
 class NoEmbedding(EmbeddingAbstract):
-    def __init__(self, input_size: int = 3, output_size: int = 3):
-        super().__init__(input_size, output_size)
+    def __init__(self, input_size, output_size: int = None):
+        if output_size is None:
+            output_size = input_size
         if input_size != output_size:
-            self.debug("Identity embedding should have input_size == "
-                       "output_size. Not stopping now but this won't work if "
-                       "your data follows the shape you are suggesting.")
+            self.log.debug("Identity embedding should have input_size == "
+                           "output_size. Not stopping now but this won't work "
+                           "if your data follows the shape you are "
+                           "suggesting.")
+
+        super().__init__(input_size, output_size)
         self.identity = torch.nn.Identity()
 
     def forward(self, inputs=None):
-        logging.debug("Embedding: running identity's forward")
+        self.log.debug("Embedding: running identity's forward")
         # toDo. Should check that input size = self.input_size but we don't
         #  know how the data is organized.
         result = self.identity(inputs)
         return result
+
+    @property
+    def attributes(self):
+        attrs = super().attributes  # type: dict
+        attrs.update({
+            'type': 'No Embedding (identity)'
+        })
+        return attrs
 
 
 class CNNEmbedding(EmbeddingAbstract):
@@ -154,11 +179,12 @@ class CNNEmbedding(EmbeddingAbstract):
 
     @property
     def attributes(self):
-        hyperparameters = super().attributes
+        params = super().attributes  # type: dict
         other_parameters = {
-            'layers': 'non-defined-yet'
+            'layers': 'non-defined-yet',
+            'type': 'CNN'
         }
-        return hyperparameters.update(other_parameters)
+        return params.update(other_parameters)
 
     def forward(self, inputs: Union[Tensor, List[Tensor], PackedSequence]):
         raise NotImplementedError

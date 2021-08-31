@@ -20,7 +20,7 @@ from dwi_ml.model.batch_samplers import (
     BatchStreamlinesSampler1IPV as BatchSampler)
 from dwi_ml.model.direction_getter_models import keys_to_direction_getters
 from dwi_ml.training.checks_for_experiment_parameters import (
-    check_all_experiment_parameters, check_logging_level)
+    check_all_experiment_parameters)
 
 from Learn2Track.model.embeddings import keys_to_embeddings
 from Learn2Track.model.learn2track_model import Learn2TrackModel
@@ -31,8 +31,7 @@ from Learn2Track.training.trainers import Learn2TrackTrainer
 
 # Previous dir embedding
 KEY_PREV_DIR_EMBEDDING = 'nn_embedding'
-NB_PREVIOUS_DIRS = 3
-PREV_DIR_EMBEDDING_SIZE = 8
+PREV_DIR_EMBEDDING_SIZE = 8  # times previous dir (ok?)
 NAN_TO_NUM = 0
 
 # Input embedding
@@ -72,18 +71,27 @@ def parse_args():
                    help='If a checkpoint exists, patience can be increased '
                         'to allow experiment to continue if the allowed '
                         'number of bad epochs has been previously reached.')
+    p.add_argument('--logging', choices=['error', 'warning', 'info', 'debug'],
+                   help="Logging level. One of ['error', 'warning', 'info', "
+                        "'debug']. Default: Info.")
 
     arguments = p.parse_args()
 
     return arguments
 
 
-def build_model(input_size, **_):
+def build_model(input_size, num_previous_dirs=0, **k):
+
     # 1. Previous dir embedding
     cls = keys_to_embeddings[KEY_PREV_DIR_EMBEDDING]
-    prev_dir_embegging_model = cls(input_size=NB_PREVIOUS_DIRS * 3,
-                                   output_size=PREV_DIR_EMBEDDING_SIZE,
-                                   nan_to_num=NAN_TO_NUM)
+    if num_previous_dirs > 0:
+        prev_dir_embedding_size = PREV_DIR_EMBEDDING_SIZE * num_previous_dirs
+        prev_dir_embedding_model = cls(input_size=num_previous_dirs * 3,
+                                       output_size=PREV_DIR_EMBEDDING_SIZE,
+                                       nan_to_num=NAN_TO_NUM)
+    else:
+        prev_dir_embedding_model = None
+        prev_dir_embedding_size = 0
 
     # 2. Input embedding
     cls = keys_to_embeddings[KEY_INPUT_EMBEDDING]
@@ -92,7 +100,7 @@ def build_model(input_size, **_):
                                 output_size=input_embedding_size)
 
     # 3. Stacked RNN
-    rnn_input_size = PREV_DIR_EMBEDDING_SIZE + input_embedding_size
+    rnn_input_size = prev_dir_embedding_size + input_embedding_size
     rnn_model = StackedRNN(RNN_KEY, rnn_input_size, RNN_LAYER_SIZES,
                            use_skip_connections=True,
                            use_layer_normalization=True,
@@ -104,7 +112,7 @@ def build_model(input_size, **_):
 
     # 5. Putting all together
     model = Learn2TrackModel(
-        previous_dir_embedding_model=prev_dir_embegging_model,
+        previous_dir_embedding_model=prev_dir_embedding_model,
         input_embedding_model=input_embedding_model,
         rnn_model=rnn_model,
         direction_getter_model=direction_getter_model)
@@ -138,7 +146,7 @@ def prepare_data_and_model(train_data_params, valid_data_params,
     # Instantiate batch
     with Timer("\n\nPreparing model",
                newline=True, color='yellow'):
-        model = build_model(size)
+        model = build_model(size, **model_params)
 
     return training_batch_sampler, validation_batch_sampler, model
 
@@ -154,13 +162,12 @@ def main():
         raise FileNotFoundError("The Yaml parameters file was not found: {}"
                                 .format(args.parameters_filename))
 
-    # Load parameters
-    with open(args.parameters_filename) as f:
-        yaml_parameters = yaml.safe_load(f.read())
-
     # Initialize logger
-    logging_level = check_logging_level(yaml_parameters['logging']['level'])
-    logging.basicConfig(level=logging_level)
+    if args.logging:
+        level = args.logging.upper()
+    else:
+        level = 'INFO'
+    logging.basicConfig(level=level)
 
     # Verify if a checkpoint has been saved. Else create an experiment.
     if path.exists(os.path.join(args.experiment_path, args.experiment_name,
@@ -188,7 +195,7 @@ def main():
             checkpoint_state['valid_data_params'],
             checkpoint_state['train_sampler_params'],
             checkpoint_state['valid_sampler_params'],
-            None)
+            checkpoint_state['model_params'])
 
         # Instantiate trainer
         with Timer("\n\nPreparing trainer",
@@ -197,6 +204,10 @@ def main():
                 training_batch_sampler, validation_batch_sampler, model,
                 checkpoint_state)
     else:
+        # Load parameters
+        with open(args.parameters_filename) as f:
+            yaml_parameters = yaml.safe_load(f.read())
+
         # Perform checks
         # We have decided to use yaml for a more rigorous way to store
         # parameters, compared, say, to bash. However, no argparser is used so
@@ -221,7 +232,7 @@ def main():
         (training_batch_sampler, validation_batch_sampler,
          model) = prepare_data_and_model(train_params, valid_params,
                                          all_params, all_params,
-                                         None)
+                                         all_params)
 
         # Instantiate trainer
         with Timer("\n\nPreparing trainer",

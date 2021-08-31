@@ -16,7 +16,6 @@ from dwi_ml.experiment.memory import log_gpu_memory_usage
 from dwi_ml.model.batch_samplers import (
     BatchStreamlinesSampler1IPV as BatchSampler)
 from dwi_ml.training.trainers import DWIMLTrainer
-from dwi_ml.utils import format_dict_to_str
 
 from Learn2Track.model.learn2track_model import Learn2TrackModel
 VERSION = 0
@@ -46,8 +45,14 @@ class Learn2TrackTrainer(DWIMLTrainer):
                  num_cpu_workers: int = None, taskman_managed: bool = None,
                  use_gpu: bool = None, comet_workspace: str = None,
                  comet_project: str = None, from_checkpoint: bool = False,
-                 clip_grad: bool = True, **_):
-        """ Init trainer """
+                 clip_grad: float = None, **_):
+        """ Init trainer
+
+        Additionnal values compared to super:
+        clip_grad : float
+            The value to which to clip gradients after the backward pass.
+            There is no good value here.
+        """
         super().__init__(batch_sampler_training, batch_sampler_validation,
                          model, experiment_path, experiment_name,
                          learning_rate, weight_decay, max_epochs,
@@ -56,9 +61,6 @@ class Learn2TrackTrainer(DWIMLTrainer):
                          comet_workspace, comet_project, from_checkpoint)
 
         self.clip_grad = clip_grad
-
-        logging.debug('Running Learn2track training using args: \n' +
-                      format_dict_to_str(self.attributes) + "\n")
 
     @property
     def attributes(self):
@@ -115,7 +117,7 @@ class Learn2TrackTrainer(DWIMLTrainer):
             This is the output of the BatchSequencesSampleOneInputVolume's
             load_batch() function. If avoid_cpu_computations, data is
             (batch_streamlines, final_streamline_ids_per_subj).
-            Else, data is (packed_inputs, batch_directions).
+            Else, data is (batch_inputs, batch_directions).
         batch_sampler: BatchSequencesSamplerOneInputVolume
             either self.train_batch_sampler or valid_batch_sampler, depending
             on the case.
@@ -173,22 +175,27 @@ class Learn2TrackTrainer(DWIMLTrainer):
             # - batch_inputs should be a list of tensors of various lengths
             #   (one per sampled streamline)
             # - idem for batch_streamlines
-            # - batch_prev_dirs should be a list of ?, or empty if no
+            # - batch_prev_dirs should be a list of tensors, or empty if no
             #   previous_dirs is used.
-            packed_inputs = pack_sequence(batch_inputs, enforce_sorted=False)
+            # We don't actually need to pack data now because the first step
+            # of the model will be the embedding, which can be done separately
+            # But we want to send data to cuda now, and we would need to send
+            # all tensors from lists separately to cuda.
+            # toDo Is it faster to loop on tensors and send each to cuda?
+            batch_inputs = pack_sequence(batch_inputs, enforce_sorted=False)
             if len(batch_prev_dirs) > 0:
-                packed_prev_dirs = pack_sequence(batch_prev_dirs,
-                                                 enforce_sorted=False)
+                batch_prev_dirs = pack_sequence(batch_prev_dirs,
+                                                enforce_sorted=False)
             else:
-                packed_prev_dirs = None
-            packed_targets = pack_sequence(batch_directions,
-                                           enforce_sorted=False)
+                batch_prev_dirs = None
+            batch_directions = pack_sequence(batch_directions,
+                                             enforce_sorted=False)
 
             if self.use_gpu:
-                packed_inputs = packed_inputs.cuda()
-                packed_targets = packed_targets.cuda()
-                if packed_prev_dirs:
-                    packed_prev_dirs = packed_prev_dirs.cuda()
+                batch_inputs = batch_inputs.cuda()
+                batch_directions = batch_directions.cuda()
+                if batch_prev_dirs and len(batch_prev_dirs)>0:
+                    batch_prev_dirs = batch_prev_dirs.cuda()
 
             if is_training:
                 # Reset parameter gradients
@@ -197,12 +204,12 @@ class Learn2TrackTrainer(DWIMLTrainer):
                 # to-call-zero-grad-in-pytorch
                 self.optimizer.zero_grad()
 
-            self.log.debug('=== Computing forward propagation! ===\n\n')
+            self.log.debug('\n=== Computing forward propagation! ===\n')
             try:
                 # Apply model. This calls our model's forward function
                 # (the hidden states are not used here, neither as input nor
                 # outputs. We need them only during tracking).
-                model_outputs, _ = self.model(packed_inputs, packed_prev_dirs)
+                model_outputs, _ = self.model(batch_inputs, batch_prev_dirs)
             except RuntimeError:
                 # Training RNNs with variable-length sequences on the GPU can
                 # cause memory fragmentation in the pytorch-managed cache,
@@ -211,24 +218,47 @@ class Learn2TrackTrainer(DWIMLTrainer):
                 # now. We don't do it every update because it can be time
                 # consuming.
                 torch.cuda.empty_cache()
-                model_outputs, _ = self.model(packed_inputs)
+                model_outputs, _ = self.model(batch_inputs)
 
             # Compute loss
-            mean_loss = self.model.compute_loss(model_outputs, packed_targets)
+            self.log.debug('\n=== Computing loss ===\n')
+            mean_loss = self.model.compute_loss(model_outputs,
+                                                batch_directions.data)
+            self.log.info("Loss is : {}".format(mean_loss))
 
             if is_training:
-                self.log.debug('Computing back propagation')
+                self.log.debug('\n=== Computing back propagation ===\n')
+
+                # Explanation on the backward here:
+                # - Each parameter in the RNN and other sub-networks have been
+                #   created with the flag requires_grad=True by torch.
+                #   ==> gradients = [i.grad for i in self.model.parameters()]
+                # - When using parameters to compute something (ex, outputs)
+                #   torch.autograd creates a computational graph, remembering
+                #   all the functions that were used from parameters that
+                #   contain the requires_grad.
+                # - When calling backward, the backward of each sub-function is
+                #   called iteratively, each time computing the partial
+                #   derivative dloss/dw and modifying the parameters' .grad
+                #   ==> model_outputs.grad_fn shows the last used fonction,
+                #       and thus the first backward to be used, here:
+                #       MeanBackward0  (last function was a mean)
+                #   ==> model_outputs.grad_fn shows that the last used fct
+                #       is AddmmBackward  (addmm = matrix multiplication)
                 mean_loss.backward()
 
                 # Clip gradient if necessary before updating parameters
                 # Remembering unclipped value.
                 grad_norm = compute_gradient_norm(self.model.parameters())
-                self.log.debug("Gradient norm (before clipping, if that is "
-                               "the case): {}".format(grad_norm))
+                self.log.debug("Gradient norm: {}".format(grad_norm))
                 if self.clip_grad:
                     # self.grad_norm_monitor.update(grad_norm)
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(),
                                                    self.clip_grad)
+                    grad_norm = compute_gradient_norm(self.model.parameters())
+                    self.log.debug("Gradient norm when gradients are clipped "
+                                   "is {}"
+                                   .format(grad_norm))
 
                 # Update parameters
                 self.optimizer.step()
