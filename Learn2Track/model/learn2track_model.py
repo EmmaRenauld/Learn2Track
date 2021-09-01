@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
-from typing import Any, Tuple, Union, List
+from typing import Any, Tuple, Union
 
 import torch
 from torch import Tensor
@@ -8,11 +8,10 @@ from torch.nn.utils.rnn import PackedSequence, pack_sequence
 
 from dwi_ml.model.direction_getter_models import AbstractDirectionGetterModel
 from dwi_ml.model.main_models import ModelAbstract
+from dwi_ml.utils import format_dict_to_str
 
 from Learn2Track.model.stacked_rnn import StackedRNN
 from Learn2Track.model.embeddings import EmbeddingAbstract
-from Learn2Track.utils.packed_sequences import (unpack_sequence,
-                                                unpack_tensor_from_indices)
 
 
 class Learn2TrackModel(ModelAbstract):
@@ -57,30 +56,47 @@ class Learn2TrackModel(ModelAbstract):
         self.rnn_model = rnn_model
         self.direction_getter = direction_getter_model
 
+        logging.debug("Learn2track model instantiated with attributes: \n" +
+                      format_dict_to_str(self.attributes) + "\n")
+
     @property
     def hyperparameters(self):
         return {}
 
     @property
     def attributes(self):
-        attributes = {
+        attrs = {
             'prev_dir_embedding': self.prev_dir_embedding.attributes,
             'input_embedding': self.input_embedding.attributes,
             'rnn_model': self.rnn_model.attributes,
-            'direction_getter': self.direction_getter_model.attributes,
+            'direction_getter': self.direction_getter.attributes,
         }
-        return attributes
+        return attrs
 
-    def forward(self, inputs: Union[PackedSequence, Tensor],
-                prev_dirs: Union[PackedSequence, List[Tensor], Tensor],
+    def set_log(self, log: logging.Logger):
+        """Possibility to pass a tqdm-compatible logger in case the dataloader
+        is iterated through a tqdm progress bar. Note that, of course, log
+        outputs will be confusing, particularly in debug mode, considering
+        that the dataloader may use more than one method in parallel."""
+        self.log = log
+        self.input_embedding.set_log(log)
+        if self.prev_dir_embedding:
+            self.prev_dir_embedding.set_log(log)
+        self.rnn_model.set_log(log)
+        self.direction_getter.set_log(log)
+
+    def forward(self, inputs: PackedSequence, prev_dirs: PackedSequence,
                 hidden_states: Any = None) -> Tuple[Any, Any]:
         """Run the model on a batch of sequences.
 
         Parameters
         ----------
-        inputs : torch.Tensor or PackedSequence
-            Batch of input sequences.
-        prev_dirs: torch.Tensor or PackedSequence or List[Tensors]
+        inputs: PackedSequence
+            Batch of input sequences, i.e. MRI data. We expect both inputs and
+            prev_dirs to be packedSequence based on current trainer
+            implementation.
+        prev_dirs: PackedSequence
+            Batch of past directions
         hidden_states : Any
             The current hidden states of the (stacked) RNN model.
 
@@ -93,66 +109,65 @@ class Learn2TrackModel(ModelAbstract):
             The last step hidden states (h_(t-1), C_(t-1) for LSTM) for each
             layer.
         """
-        orig_input = inputs
+        orig_inputs = inputs
 
         # Previous dirs embedding, input_dirs embedding
-        logging.debug("================ 1. Previous dir embedding...")
-        prev_dirs = self.prev_dir_embedding(prev_dirs)
-        logging.debug("================ 2. Inputs embedding...")
-        inputs = self.input_embedding(inputs)
+        self.log.debug("================ 1. Previous dir embedding, if any "
+                       "(on tensor)...")
+        self.log.debug("Input size: {}".format(prev_dirs.data.shape[-1]))
+        if prev_dirs is not None:
+            prev_dirs = self.prev_dir_embedding(prev_dirs.data)
+        self.log.debug("Output size: {}".format(prev_dirs.shape[-1]))
+
+        self.log.debug("================ 2. Inputs embedding (on tensor)...")
+        self.log.debug("Input size: {}".format(inputs.data.shape[-1]))
+        inputs = self.input_embedding(inputs.data)
+        self.log.debug("Output size: {}".format(inputs.shape[-1]))
 
         # Concatenating this result to input and packing if list
-        logging.debug("================ 3. Concatenating previous dirs and "
-                      "inputs's embeddings")
-        inputs = self._concat_prev_dirs(inputs, prev_dirs)
+        self.log.debug("================ 3. Concatenating previous dirs and "
+                       "inputs's embeddings")
+        if prev_dirs is not None:
+            inputs = self._concat_prev_dirs(inputs, prev_dirs)
+
+        self.log.debug("Packing back data for RNN.")
+        inputs = PackedSequence(inputs, orig_inputs.batch_sizes,
+                                orig_inputs.sorted_indices,
+                                orig_inputs.unsorted_indices)
 
         # Run the inputs sequences through the stacked RNN
-        logging.debug("================ 4. Stacked RNN...")
+        self.log.debug("================ 4. Stacked RNN....")
         rnn_output, out_hidden_states = self.rnn_model(inputs, hidden_states)
+        self.log.debug("Output size: {}".format(rnn_output.data.shape[-1]))
 
         # Run the rnn outputs into the direction getter model
-        logging.debug("================ 5. Direction getter.")
-        if (isinstance(orig_input, PackedSequence) or
-                isinstance(orig_input, list)):
-            # rnn_output is a packed sequence. Sending only the tensor version
-            # then recreating the packed sequence
-            data = self.direction_getter(rnn_output.data)
-            logging.debug("Direction getter output: {}".format(data))
-            if isinstance(orig_input, PackedSequence):
-                final_directions = PackedSequence(data, inputs.batch_sizes,
-                                                  inputs.sorted_indices,
-                                                  inputs.unsorted_indices)
-            else:  # isinstance(orig_input, list):
-                # Reordering to fit original list
-                indices = unpack_sequence(inputs, get_indices_only=True)
-                final_directions = unpack_tensor_from_indices(data, indices)
-        else:
-            final_directions = self.direction_getter(rnn_output)
-        logging.debug("Final directions: {}".format(final_directions))
+        self.log.debug("================ 5. Direction getter.")
+        final_directions = self.direction_getter(rnn_output.data)
+        self.log.debug("Output size: {}".format(final_directions.shape[-1]))
 
         # 4. Return the hidden states. Necessary for the generative
         # (tracking) part, done step by step.
         return final_directions, out_hidden_states
 
-    @staticmethod
-    def _concat_prev_dirs(inputs, prev_dirs):
+    def _concat_prev_dirs(self, inputs, prev_dirs):
         """Concatenating data depends on the data type."""
+
         if isinstance(inputs, Tensor) and isinstance(prev_dirs, Tensor):
+            self.log.debug("Previous dir and inputs both seem to be tensors. "
+                           "Concatenating if dimensions fit. Input shape: {},"
+                           "Prev dir shape: {}"
+                           .format(inputs.shape, prev_dirs.shape))
             inputs = torch.cat((inputs, prev_dirs), dim=-1)
-            logging.debug("Previous dir and inputs both seem to be tensors. "
-                          "Concatenating if dimensions fit. Input shape: {},"
-                          "Prev dir shape: {}"
-                          .format(inputs.shape, prev_dirs.shape))
-            inputs = torch.cat((inputs, prev_dirs), dim=-1)
-            logging.debug("Concatenated shape: {}".format(inputs.shape))
+            self.log.debug("Concatenated shape: {}".format(inputs.shape))
 
         elif isinstance(inputs, list) and isinstance(prev_dirs, list):
             nb_s_input = len(inputs)
             nb_s_prev_dir = len(prev_dirs)
-            logging.debug("Previous dir and inputs both seem to be a list of "
-                          "tensors, probably one per streamline. Now checking "
-                          "that their dimensions fit. Nb inputs: {}, Nb "
-                          "prev_dirs: {}".format(nb_s_input, nb_s_prev_dir))
+            self.log.debug("Previous dir and inputs both seem to be a list of "
+                           "tensors, probably one per streamline. Now "
+                           "checking that their dimensions fit. Nb inputs: "
+                           "{}, Nb prev_dirs: {}"
+                           .format(nb_s_input, nb_s_prev_dir))
             assert nb_s_input == nb_s_prev_dir, \
                 "Both lists do not have the same length (not the same " \
                 "number of streamlines?)"
@@ -219,6 +234,7 @@ class Learn2TrackModel(ModelAbstract):
         if isinstance(targets, PackedSequence):
             targets = targets.data
         mean_loss = self.direction_getter.compute_loss(outputs, targets)
+
         return mean_loss
 
     def sample_tracking_directions(self, single_step_inputs: Tensor,

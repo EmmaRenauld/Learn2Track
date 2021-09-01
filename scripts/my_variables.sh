@@ -23,7 +23,6 @@ echo "Declaring bash variables for databases ismrm2015, neher99, hcp, tractoinfe
     subjects_list_ismrm2015_noArtefact="$ismrm2015_folder/noArtefact/subjects.txt"
     training_subjs_ismrm2015_noArtefact="$ismrm2015_folder/noArtefact/ML_studies/subjects_for_ML_training.txt"
     validation_subjs_ismrm2015_noArtefact="$ismrm2015_folder/noArtefact/ML_studies/subjects_for_ML_validation.txt"
-    testing_subjs_hcp=""
     config_file_ismrm2015_noArtefact="$ismrm2015_folder/noArtefact/ML_studies/config_file.json"
 
     database_folder_ismrm2015_basic="$ismrm2015_folder/derivatives/basic"
