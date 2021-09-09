@@ -86,7 +86,6 @@ class Learn2TrackTrainer(DWIMLTrainer):
         n_train_batches_capped, _ = self._compute_epoch_stats(
             self.train_batch_sampler)
 
-        # toDo. Why would this be different?
         logging.info("Learn2track: Estimating validation epoch statistics...")
         n_valid_batches_capped, _ = self._compute_epoch_stats(
             self.valid_batch_sampler)
@@ -121,8 +120,6 @@ class Learn2TrackTrainer(DWIMLTrainer):
         batch_sampler: BatchSequencesSamplerOneInputVolume
             either self.train_batch_sampler or valid_batch_sampler, depending
             on the case.
-            # toDo This could be simplified by merging together the two batch
-            #  samplers
         is_training : bool
             If True, record the computation graph and backprop through the
             model parameters.
@@ -194,7 +191,7 @@ class Learn2TrackTrainer(DWIMLTrainer):
             if self.use_gpu:
                 batch_inputs = batch_inputs.cuda()
                 batch_directions = batch_directions.cuda()
-                if batch_prev_dirs and len(batch_prev_dirs)>0:
+                if batch_prev_dirs and len(batch_prev_dirs) > 0:
                     batch_prev_dirs = batch_prev_dirs.cuda()
 
             if is_training:
@@ -367,17 +364,15 @@ class Learn2TrackTrainer(DWIMLTrainer):
                       .format(avg_batch_size))
 
         # Define the number of batch per epoch
-        dataset_size = len(dataloader.dataset)
+        dataset_size = batch_sampler.data_source.total_streamlines[
+            batch_sampler.streamline_group]
         n_batches = int(dataset_size / avg_batch_size)
-        n_batches_capped = min(n_batches,
-                               self.max_batches_per_epochs)
+        n_batches_capped = min(n_batches, self.max_batches_per_epochs)
 
-        logging.info("Dataset had {} streamlines (before data augmentation) "
-                     "for a total size of {}.\n"
+        logging.info("Dataset had {} streamlines (before data augmentation)\n"
                      "We will be using approximately {} iterations (i.e. "
                      "batches) per epoch (but not more than the allowed {}).\n"
-                     .format(len(self.train_batch_sampler.data_source),
-                             dataset_size, n_batches, n_batches_capped))
+                     .format(dataset_size, n_batches, n_batches_capped))
 
         return n_batches_capped, avg_batch_size
 

@@ -21,6 +21,7 @@ from dwi_ml.model.batch_samplers import (
 from dwi_ml.model.direction_getter_models import keys_to_direction_getters
 from dwi_ml.training.checks_for_experiment_parameters import (
     check_all_experiment_parameters)
+from dwi_ml.utils import format_dict_to_str
 
 from Learn2Track.model.embeddings import keys_to_embeddings
 from Learn2Track.model.learn2track_model import Learn2TrackModel
@@ -53,6 +54,14 @@ def parse_args():
     p.add_argument('experiment_path',
                    help='Path where to save your experiment. Complete path '
                         'will be experiment_path/experiment_name.')
+    p.add_argument('--input_group',
+                   help='Name of the input group. If a checkpoint exists, '
+                        'this information is already contained in the '
+                        'checkpoint and is not necessary.')
+    p.add_argument('--target_group',
+                   help='Name of the target streamline group. If a checkpoint '
+                        'exists, this information is already contained in the '
+                        'checkpoint and is not necessary.')
     p.add_argument('--hdf5_filename',
                    help='Path to the .hdf5 dataset. Should contain both your '
                         'training subjects and validation subjects. If a '
@@ -133,12 +142,10 @@ def prepare_data_and_model(train_data_params, valid_data_params,
     with Timer("\n\nPreparing batch samplers with volume: {}"
                        .format(training_dataset.volume_groups[0]),
                newline=True, color='green'):
-        training_batch_sampler = BatchSampler(
-            training_dataset, training_dataset.streamline_group,
-            training_dataset.volume_groups[0], **train_sampler_params)
-        validation_batch_sampler = BatchSampler(
-            validation_dataset, validation_dataset.streamline_group,
-            validation_dataset.volume_groups[0], **valid_sampler_params)
+        training_batch_sampler = BatchSampler(training_dataset,
+                                              **train_sampler_params)
+        validation_batch_sampler = BatchSampler(validation_dataset,
+                                                **valid_sampler_params)
 
     # Instantiate model.
     # Hint: input_size is :
@@ -223,20 +230,27 @@ def main():
         all_params['experiment_path'] = args.experiment_path
         all_params['experiment_name'] = args.experiment_name
 
+        logging.debug("All params: " + format_dict_to_str(all_params))
+
         train_params = all_params.copy()
         train_params['subjs_set'] = 'training_subjs'
         valid_params = all_params.copy()
         valid_params['subjs_set'] = 'validation_subjs'
 
+        # If you wish to have different parameters for the batch sampler during
+        # trainnig and validation, change values below.
+        sampler_params = all_params.copy()
+        sampler_params['input_group_name'] = args.input_group
+        sampler_params['streamline_group_name'] = args.target_group
+
         # Prepare the trainer from checkpoint_state
         (training_batch_sampler, validation_batch_sampler,
          model) = prepare_data_and_model(train_params, valid_params,
-                                         all_params, all_params,
+                                         sampler_params, sampler_params,
                                          all_params)
 
         # Instantiate trainer
-        with Timer("\n\nPreparing trainer",
-                   newline=True, color='red'):
+        with Timer("\n\nPreparing trainer", newline=True, color='red'):
             trainer = Learn2TrackTrainer(training_batch_sampler,
                                          validation_batch_sampler, model,
                                          **all_params)
