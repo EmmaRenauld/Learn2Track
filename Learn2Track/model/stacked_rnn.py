@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import logging
 from typing import List, Tuple, Union
 
 import torch
@@ -7,10 +6,9 @@ from torch import Tensor
 from torch.nn.utils.rnn import PackedSequence
 
 from dwi_ml.model.main_models import ModelAbstract
-from dwi_ml.utils import format_dict_to_str
 
-KEY_TO_RNN_CLASS = {'lstm': torch.nn.LSTM,
-                    'gru': torch.nn.GRU}
+keys_to_rnn_class = {'lstm': torch.nn.LSTM,
+                     'gru': torch.nn.GRU}
 
 
 class StackedRNN(ModelAbstract):
@@ -22,8 +20,8 @@ class StackedRNN(ModelAbstract):
     """
 
     def __init__(self, rnn_torch_key: str, input_size: int,
-                 layer_sizes: List[int], use_skip_connections: bool = False,
-                 use_layer_normalization: bool = False, dropout: float = 0.):
+                 layer_sizes: List[int], use_skip_connections: bool,
+                 use_layer_normalization: bool, dropout: float):
         """
         Parameters
         ----------
@@ -81,7 +79,7 @@ class StackedRNN(ModelAbstract):
         self.relu_sublayer = torch.nn.ReLU()
 
         # Initialize model
-        rnn_cls = KEY_TO_RNN_CLASS[self.rnn_torch_key]
+        rnn_cls = keys_to_rnn_class[self.rnn_torch_key]
         last_layer_size = input_size
         for i, layer_size in enumerate(layer_sizes):
             # Instantiate RNN layer
@@ -171,7 +169,8 @@ class StackedRNN(ModelAbstract):
         # Running forward on each layer:
         # linear --> layer norm --> dropout --> skip connection
         last_output = inputs
-        for i, (layer_i, states_i) in enumerate(zip(self.rnn_layers, hidden_states)):
+        for i, (layer_i, states_i) in enumerate(zip(self.rnn_layers,
+                                                    hidden_states)):
             self.log.debug('Applying StackedRnn layer #{}\n'
                            '    Layer is: {}\n'
                            '    Received input size: {}.'
@@ -227,20 +226,20 @@ class StackedRNN(ModelAbstract):
             # sequence.
             if was_packed:
                 last_output = PackedSequence(last_output, inputs.batch_sizes,
-                                        inputs.sorted_indices,
-                                        inputs.unsorted_indices)
+                                             inputs.sorted_indices,
+                                             inputs.unsorted_indices)
 
         # Final last_output
         if self.use_skip_connections:
             if was_packed:
-                # Can't just replace last_output.data, throws an attribute error.
-                # Solutions: create the models as inplace (ex,
+                # Can't just replace last_output.data, throws an attribute
+                # error. Solutions: create the models as inplace (ex,
                 # torch.nn.Dropout(p=p, inplace=True)), or reconstruct a
                 # packedSequence
                 last_output = PackedSequence(torch.cat(outputs, dim=-1),
-                                        inputs.batch_sizes,
-                                        inputs.sorted_indices,
-                                        inputs.unsorted_indices)
+                                             inputs.batch_sizes,
+                                             inputs.sorted_indices,
+                                             inputs.unsorted_indices)
             else:
                 last_output = torch.cat(outputs, dim=-1)
 

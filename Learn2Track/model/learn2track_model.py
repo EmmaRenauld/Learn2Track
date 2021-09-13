@@ -8,7 +8,6 @@ from torch.nn.utils.rnn import PackedSequence, pack_sequence
 
 from dwi_ml.model.direction_getter_models import AbstractDirectionGetterModel
 from dwi_ml.model.main_models import ModelAbstract
-from dwi_ml.utils import format_dict_to_str
 
 from Learn2Track.model.stacked_rnn import StackedRNN
 from Learn2Track.model.embeddings import EmbeddingAbstract
@@ -56,17 +55,22 @@ class Learn2TrackModel(ModelAbstract):
         self.rnn_model = rnn_model
         self.direction_getter = direction_getter_model
 
-        logging.debug("Learn2track model instantiated with attributes: \n" +
-                      format_dict_to_str(self.attributes) + "\n")
-
     @property
     def hyperparameters(self):
+        hyp = {
+            'prev_dir_embedding': self.prev_dir_embedding.hyperparameters if
+            self.prev_dir_embedding else None,
+            'input_embedding': self.input_embedding.hyperparameters,
+            'rnn_model': self.rnn_model.hyperparameters,
+            'direction_getter': self.direction_getter.hyperparameters,
+        }
         return {}
 
     @property
     def attributes(self):
         attrs = {
-            'prev_dir_embedding': self.prev_dir_embedding.attributes,
+            'prev_dir_embedding': self.prev_dir_embedding.attributes if
+            self.prev_dir_embedding else None,
             'input_embedding': self.input_embedding.attributes,
             'rnn_model': self.rnn_model.attributes,
             'direction_getter': self.direction_getter.attributes,
@@ -114,10 +118,10 @@ class Learn2TrackModel(ModelAbstract):
         # Previous dirs embedding, input_dirs embedding
         self.log.debug("================ 1. Previous dir embedding, if any "
                        "(on tensor)...")
-        self.log.debug("Input size: {}".format(prev_dirs.data.shape[-1]))
         if prev_dirs is not None:
+            self.log.debug("Input size: {}".format(prev_dirs.data.shape[-1]))
             prev_dirs = self.prev_dir_embedding(prev_dirs.data)
-        self.log.debug("Output size: {}".format(prev_dirs.shape[-1]))
+            self.log.debug("Output size: {}".format(prev_dirs.shape[-1]))
 
         self.log.debug("================ 2. Inputs embedding (on tensor)...")
         self.log.debug("Input size: {}".format(inputs.data.shape[-1]))

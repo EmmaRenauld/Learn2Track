@@ -7,8 +7,8 @@ from torch.nn.utils.rnn import (PackedSequence, pack_sequence)
 
 from dwi_ml.model.main_models import ModelAbstract
 
-from Learn2Track.utils.packed_sequences import (unpack_sequence,
-                                                unpack_tensor_from_indices)
+from Learn2Track.packed_sequences import (unpack_sequence,
+                                          unpack_tensor_from_indices)
 
 """
 Data needs to be usable as torch tensors or as packed sequences.
@@ -41,8 +41,7 @@ class EmbeddingAbstract(ModelAbstract):
 
     @property
     def hyperparameters(self):
-        hyperparameters = {}
-        return hyperparameters
+        return {}
 
     def forward(self, inputs: Union[Tensor, List[Tensor], PackedSequence]):
         """
@@ -59,8 +58,7 @@ class EmbeddingAbstract(ModelAbstract):
 
 
 class NNEmbedding(EmbeddingAbstract):
-    def __init__(self, input_size, output_size: int = 128,
-                 nan_to_num: int = 100):
+    def __init__(self, input_size, output_size: int):
         """
         Params
         ------
@@ -69,25 +67,10 @@ class NNEmbedding(EmbeddingAbstract):
         output_size: int
             See super. Default for the NN case: Philippe had set 128 in version
             1 of learn2track. Rationale?
-        nan_to_num: int
-            Number to which nans will be set. Ex: for previous direction.
-            Using 0 could seem natural but then it means that a previous dir
-            coming from [0,0,0] is understood as not a direction. Could
-            aberrant number be more suited? Directions are between 0 and 1. Can
-            100 be understood as "not a direction". Can we keep nans? #toDo
-            Testing should be done.
         """
         super().__init__(input_size, output_size)
         self.linear = torch.nn.Linear(self.input_size, self.output_size)
         self.relu = torch.nn.ReLU()
-        self.nan_to_num = nan_to_num
-
-    @property
-    def hyperparameters(self):
-        hyperparameters = {
-            'nan_to_num': self.nan_to_num
-        }
-        return hyperparameters
 
     @property
     def attributes(self):
@@ -119,9 +102,6 @@ class NNEmbedding(EmbeddingAbstract):
         else:
             raise ValueError("Input must be a tensor or a list of tensors.")
 
-        # Choosing what to do with invalid previous directions (NaNs)
-        inputs_tensor[torch.isnan(inputs_tensor)] = self.nan_to_num
-
         # Calling forward.
         result = self.linear(inputs_tensor)
         result = self.relu(result)
@@ -150,7 +130,7 @@ class NoEmbedding(EmbeddingAbstract):
         if input_size != output_size:
             self.log.debug("Identity embedding should have input_size == "
                            "output_size. Not stopping now but this won't work "
-                           "if your data follows the shape you are "
+                           "if your data does not follow the shape you are "
                            "suggesting.")
 
         super().__init__(input_size, output_size)
@@ -173,7 +153,7 @@ class NoEmbedding(EmbeddingAbstract):
 
 
 class CNNEmbedding(EmbeddingAbstract):
-    def __init__(self, input_size: int, output_size: int = 128):
+    def __init__(self, input_size: int, output_size: int):
         super().__init__(input_size, output_size)
         self.cnn_layer = torch.nn.Conv3d
 
