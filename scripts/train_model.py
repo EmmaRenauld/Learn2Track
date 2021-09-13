@@ -13,7 +13,7 @@ from os import path
 
 import yaml
 
-from dwi_ml.data.dataset.multi_subject_containers import init_dataset
+from dwi_ml.data.dataset.multi_subject_containers import MultiSubjectDataset
 from dwi_ml.experiment.monitoring import EarlyStoppingError
 from dwi_ml.experiment.timer import Timer
 from dwi_ml.model.batch_samplers import (
@@ -89,13 +89,12 @@ def parse_args():
     return arguments
 
 
-def build_model(input_size, num_previous_dirs=0, **k):
-
+def build_model(input_size, nb_previous_dirs, **_):
     # 1. Previous dir embedding
     cls = keys_to_embeddings[KEY_PREV_DIR_EMBEDDING]
-    if num_previous_dirs > 0:
-        prev_dir_embedding_size = PREV_DIR_EMBEDDING_SIZE * num_previous_dirs
-        prev_dir_embedding_model = cls(input_size=num_previous_dirs * 3,
+    if nb_previous_dirs > 0:
+        prev_dir_embedding_size = PREV_DIR_EMBEDDING_SIZE * nb_previous_dirs
+        prev_dir_embedding_model = cls(input_size=nb_previous_dirs * 3,
                                        output_size=PREV_DIR_EMBEDDING_SIZE,
                                        nan_to_num=NAN_TO_NUM)
     else:
@@ -126,31 +125,38 @@ def build_model(input_size, num_previous_dirs=0, **k):
         rnn_model=rnn_model,
         direction_getter_model=direction_getter_model)
 
+    logging.debug("Learn2track model instantiated with attributes: \n" +
+                  format_dict_to_str(model.attributes) + "\n")
+
     return model
 
 
-def prepare_data_and_model(train_data_params, valid_data_params,
-                           train_sampler_params, valid_sampler_params,
-                           model_params):
+def prepare_data_and_model(dataset_params, train_sampler_params,
+                           valid_sampler_params, model_params):
     # Instantiate dataset classes
     with Timer("\n\nPreparing testing and validation sets",
                newline=True, color='blue'):
-        training_dataset = init_dataset(**train_data_params)
-        validation_dataset = init_dataset(**valid_data_params)
+        dataset = MultiSubjectDataset(**dataset_params)
+        dataset.load_data()
+
+        logging.debug("\n\nDataset attributes: \n" +
+                      format_dict_to_str(dataset.attributes))
 
     # Instantiate batch
-    with Timer("\n\nPreparing batch samplers with volume: {}"
-                       .format(training_dataset.volume_groups[0]),
+    with Timer("\n\nPreparing batch samplers with volume: '{}' and "
+               "streamlines '{}'"
+               .format(train_sampler_params['input_group_name'],
+                       train_sampler_params['streamline_group_name']),
                newline=True, color='green'):
-        training_batch_sampler = BatchSampler(training_dataset,
+        training_batch_sampler = BatchSampler(dataset.training_set,
                                               **train_sampler_params)
-        validation_batch_sampler = BatchSampler(validation_dataset,
+        validation_batch_sampler = BatchSampler(dataset.validation_set,
                                                 **valid_sampler_params)
 
-    # Instantiate model.
     # Hint: input_size is :
-    size = training_batch_sampler.data_source.data_list.feature_sizes[0]
-    # Instantiate batch
+    size = dataset.nb_features[0]
+
+    # Instantiate model
     with Timer("\n\nPreparing model",
                newline=True, color='yellow'):
         model = build_model(size, **model_params)
@@ -198,8 +204,7 @@ def main():
         # Prepare the trainer from checkpoint_state
         (training_batch_sampler, validation_batch_sampler,
          model) = prepare_data_and_model(
-            checkpoint_state['train_data_params'],
-            checkpoint_state['valid_data_params'],
+            checkpoint_state['dataset_params'],
             checkpoint_state['train_sampler_params'],
             checkpoint_state['valid_sampler_params'],
             checkpoint_state['model_params'])
@@ -232,22 +237,16 @@ def main():
 
         logging.debug("All params: " + format_dict_to_str(all_params))
 
-        train_params = all_params.copy()
-        train_params['subjs_set'] = 'training_subjs'
-        valid_params = all_params.copy()
-        valid_params['subjs_set'] = 'validation_subjs'
-
         # If you wish to have different parameters for the batch sampler during
         # trainnig and validation, change values below.
         sampler_params = all_params.copy()
         sampler_params['input_group_name'] = args.input_group
         sampler_params['streamline_group_name'] = args.target_group
 
-        # Prepare the trainer from checkpoint_state
+        # Prepare the trainer from params
         (training_batch_sampler, validation_batch_sampler,
-         model) = prepare_data_and_model(train_params, valid_params,
-                                         sampler_params, sampler_params,
-                                         all_params)
+         model) = prepare_data_and_model(all_params, sampler_params,
+                                         sampler_params, all_params)
 
         # Instantiate trainer
         with Timer("\n\nPreparing trainer", newline=True, color='red'):
