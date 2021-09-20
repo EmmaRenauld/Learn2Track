@@ -33,9 +33,11 @@ class EmbeddingAbstract(ModelAbstract):
 
     @property
     def attributes(self):
+        # We need real int types, not numpy.int64, not recognized by json
+        # dumps.
         attributes = {
-            'input_size': self.input_size,
-            'output_size': self.output_size,
+            'input_size': int(self.input_size),
+            'output_size': int(self.output_size),
         }
         return attributes
 

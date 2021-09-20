@@ -80,11 +80,11 @@ class Learn2TrackTrainer(DWIMLTrainer):
     # init_comet as super
 
     def estimate_nb_batches_per_epoch(self):
-        logging.info("Learn2track: Estimating training epoch statistics...")
+        logging.debug("Learn2track: Estimating training epoch statistics...")
         n_train_batches_capped, _ = self._compute_epoch_stats(
             self.train_batch_sampler)
 
-        logging.info("Learn2track: Estimating validation epoch statistics...")
+        logging.debug("Learn2track: Estimating validation epoch statistics...")
         n_valid_batches_capped, _ = self._compute_epoch_stats(
             self.valid_batch_sampler)
 
@@ -199,8 +199,6 @@ class Learn2TrackTrainer(DWIMLTrainer):
                 if batch_prev_dirs:
                     batch_prev_dirs = batch_prev_dirs.cuda()
 
-            print("HAVE WE SEND DATA TO GPU? {}".format(batch_inputs.data.device))
-
             if is_training:
                 # Reset parameter gradients
                 # See here for some explanation
@@ -266,6 +264,8 @@ class Learn2TrackTrainer(DWIMLTrainer):
 
                 # Update parameters
                 self.optimizer.step()
+            else:
+                grad_norm = None
 
             if self.use_gpu:
                 log_gpu_memory_usage()
@@ -384,7 +384,8 @@ class Learn2TrackTrainer(DWIMLTrainer):
         logging.info("Dataset had {} streamlines (before data augmentation)\n"
                      "We will be using approximately {} iterations (i.e. "
                      "batches) per epoch (but not more than the allowed {}).\n"
-                     .format(dataset_size, n_batches, n_batches_capped))
+                     .format(dataset_size, n_batches,
+                             self.max_batches_per_epochs))
 
         return n_batches_capped, avg_batch_size
 

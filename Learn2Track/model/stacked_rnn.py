@@ -111,11 +111,11 @@ class StackedRNN(ModelAbstract):
             'rnn_torch_key': self.rnn_torch_key,
             'input_size': self.input_size,
             'output_size': self.output_size,
-            'layer_sizes': self.layer_sizes,
+            'layer_sizes': list(self.layer_sizes),
             'use_skip_connections': self.use_skip_connections,
             'use_layer_normalization': self.use_layer_normalization,
             'dropout': self.dropout,
-            'prepared_layers': self.rnn_layers
+            # 'prepared_layers': self.rnn_layers  -> not json serializable
         }
         return attrs
 

@@ -22,7 +22,10 @@ hdf5_filename="$database_folder/hdf5/$name.hdf5"
 # 2. Running training on chosen database:
 ###########
 mkdir $database_folder/experiments
-python scripts/train_model.py --loggin debug \
+rm -r $database_folder/experiments/test_experiment1/checkpoint
+# If bugged before:
+rm -r $database_folder/experiments/test_experiment1/model_old/model
+python scripts/train_model.py --loggin info \
       --input_group 'input' --target_group 'streamlines' \
       --hdf5_filename $database_folder/hdf5/ismrm2015_noArtefact_test.hdf5 \
       --parameters_filename parameters/training_parameters_experimentX.yaml \

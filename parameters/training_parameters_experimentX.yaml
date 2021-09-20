@@ -108,7 +108,7 @@ training:
         #      Maximum number of batches per epoch. Exemple: 10000. This will
         #      help avoid long epochs, to ensure that we save checkpoints
         #      regularly.
-        max_batches_per_epoch: 10000
+        max_batches_per_epoch: 10
 
 model:
     previous_dirs:

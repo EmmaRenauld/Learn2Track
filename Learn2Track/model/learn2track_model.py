@@ -7,13 +7,13 @@ from torch import Tensor
 from torch.nn.utils.rnn import PackedSequence, pack_sequence
 
 from dwi_ml.model.direction_getter_models import AbstractDirectionGetterModel
-from dwi_ml.model.main_models import ModelAbstract
+from dwi_ml.model.main_models import MainModelAbstract
 
 from Learn2Track.model.stacked_rnn import StackedRNN
 from Learn2Track.model.embeddings import EmbeddingAbstract
 
 
-class Learn2TrackModel(ModelAbstract):
+class Learn2TrackModel(MainModelAbstract):
     """
     Recurrent tracking model.
 
@@ -64,7 +64,7 @@ class Learn2TrackModel(ModelAbstract):
             'rnn_model': self.rnn_model.hyperparameters,
             'direction_getter': self.direction_getter.hyperparameters,
         }
-        return {}
+        return hyp
 
     @property
     def attributes(self):
