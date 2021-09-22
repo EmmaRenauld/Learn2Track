@@ -41,7 +41,7 @@ def check_prev_dirs_embedding(embedding_key: str, nb_previous_dirs: int,
                          "allowed values: {}"
                          .format(keys_to_embeddings.keys()))
 
-    return keys_to_embeddings[embedding_key], output_size
+    return embedding_key, output_size
 
 
 def check_inputs_embedding(embedding_key: str):
@@ -52,10 +52,12 @@ def check_inputs_embedding(embedding_key: str):
         raise ValueError("Inputs embedding key is not one of the allowed "
                          "values: {}".format(keys_to_embeddings.keys()))
 
-    return keys_to_embeddings[embedding_key]
+    return embedding_key
 
 
-def check_rnn_params(rnn_key: str, layer_sizes: List[int]):
+def check_rnn_params(rnn_key: str, layer_sizes: List[int],
+                     use_skip_connections: bool,
+                     use_layer_normalization: bool):
     # 1) RNN key
     check_str_or_none_instance(rnn_key, 'rnn_key')
     if rnn_key not in keys_to_rnn_class:
@@ -68,7 +70,13 @@ def check_rnn_params(rnn_key: str, layer_sizes: List[int]):
     if not isinstance(layer_sizes[0], int):
         raise ValueError("RNN layers should contain integers!")
 
-    return rnn_key, layer_sizes
+    # 3) other
+    use_skip_connections = check_bool_instance_not_none(
+        use_skip_connections, 'use_skip_connections')
+    use_layer_normalization = check_bool_instance_not_none(
+        use_layer_normalization, 'use_layer_normalization')
+
+    return rnn_key, layer_sizes, use_skip_connections, use_layer_normalization
 
 
 def check_direction_getter(key: str):
@@ -78,7 +86,7 @@ def check_direction_getter(key: str):
     if key not in keys_to_direction_getters:
         raise ValueError("Direction getter key is not one of the allowed "
                          "values: {}".format(keys_to_direction_getters.keys()))
-    return keys_to_direction_getters[key]
+    return key
 
 
 def check_all_experiment_parameters(conf: dict):
@@ -91,25 +99,30 @@ def check_all_experiment_parameters(conf: dict):
             conf['training']['clip_grad'], 'clip_grad')})
 
     # model additional params:
-    cp, sp = check_prev_dirs_embedding(
+    pdek, pdes = check_prev_dirs_embedding(
         conf['model']['previous_dirs']['embedding'],
         model_params['nb_previous_dirs'],
         conf['model']['previous_dirs']['embedding_output_size'])
-    rk, rls = check_rnn_params(conf['model']['rnn']['rnn_key'],
-                               conf['model']['rnn']['layer_sizes'])
+    rk, rls, rsc, rln = check_rnn_params(
+        conf['model']['rnn']['rnn_key'],
+        conf['model']['rnn']['layer_sizes'],
+        conf['model']['rnn']['use_skip_connection'],
+        conf['model']['rnn']['use_layer_normalization'])
     model_params.update({
-        'prev_dirs_embedding_cls': cp,
-        'prev_dirs_embedding_size': sp,
-        'input_embedding_cls': check_inputs_embedding(
+        'prev_dirs_embedding_key': pdek,
+        'prev_dirs_embedding_size': pdes,
+        'input_embedding_key': check_inputs_embedding(
             conf['model']['input']['embedding']),
         'input_embedding_size_ratio': check_float_or_none_instance(
             conf['model']['input']['output_size_ratio'],
             'input embedding size'),
         'rnn_key': rk,
         'rnn_layer_sizes': rls,
+        'use_skip_connection': rsc,
+        'use_layer_normalization': rln,
         'dropout': check_float_or_none_instance(
             conf['model']['rnn']['dropout'], 'dropout'),
-        'direction_getter_cls': check_direction_getter(
+        'direction_getter_key': check_direction_getter(
             conf['model']['direction_getter']['key'])})
 
     return (sampling_params, training_params, model_params, memory_params,

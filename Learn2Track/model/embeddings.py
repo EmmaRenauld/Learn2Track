@@ -78,7 +78,7 @@ class NNEmbedding(EmbeddingAbstract):
     def attributes(self):
         attrs = super().attributes  # type: dict
         attrs.update({
-            'type': 'NN'
+            'key': 'nn_embedding'
         })
         return attrs
 
@@ -149,7 +149,7 @@ class NoEmbedding(EmbeddingAbstract):
     def attributes(self):
         attrs = super().attributes  # type: dict
         attrs.update({
-            'type': 'No Embedding (identity)'
+            'key': 'no_embedding'
         })
         return attrs
 
@@ -164,7 +164,7 @@ class CNNEmbedding(EmbeddingAbstract):
         params = super().attributes  # type: dict
         other_parameters = {
             'layers': 'non-defined-yet',
-            'type': 'CNN'
+            'key': 'cnn_embedding'
         }
         return params.update(other_parameters)
 

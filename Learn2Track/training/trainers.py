@@ -273,9 +273,10 @@ class Learn2TrackTrainer(DWIMLTrainer):
         return mean_loss.cpu().item(), grad_norm
 
     @classmethod
-    def init_from_checkpoint(cls, batch_sampler_training: BatchSampler,
-                             batch_sampler_validation: BatchSampler,
-                             model, checkpoint_state: dict):
+    def init_from_checkpoint(
+            cls, batch_sampler_training: BatchSampler,
+            batch_sampler_validation: BatchSampler, model: Learn2TrackModel,
+            checkpoint_state: dict, new_patience, new_max_epochs):
         """
         During save_checkpoint(), checkpoint_state.pkl is saved. Loading it
         back offers a dict that can be used to instantiate an experiment and
@@ -283,25 +284,20 @@ class Learn2TrackTrainer(DWIMLTrainer):
         """
 
         # Use super's method but return this learn2track trainer as 'cls'.
-        experiment, checkpoint_state = super(cls, cls).init_from_checkpoint(
+        experiment = super(cls, cls).init_from_checkpoint(
             batch_sampler_training, batch_sampler_validation, model,
-            checkpoint_state)
+            checkpoint_state, new_patience, new_max_epochs)
 
         return experiment
 
-    # save_checkpoint_state: same as super
-
     def _prepare_checkpoint_state(self) -> dict:
         checkpoint_state = super()._prepare_checkpoint_state()
-        other_params = {
-            'optimizer_state': self.optimizer.state_dict(),
-            'weights': self.model.state_dict(),
-            'grad_norm_monitor_state': self.grad_norm_monitor.get_state()
-        }
-        checkpoint_state.update(other_params)
-
+        checkpoint_state['params_for_init'].update({
+            'clip_grad': self.clip_grad
+        })
         return checkpoint_state
 
+    # save_checkpoint_state:       same as super
     # _should quit                 same as user
     # _update_taskman_report       same as user
     # _save_log_from_array         same as user
@@ -388,15 +384,3 @@ class Learn2TrackTrainer(DWIMLTrainer):
                              self.max_batches_per_epochs))
 
         return n_batches_capped, avg_batch_size
-
-    """
-    Deleted.
-    if experiment_name is None:
-        experiment_name = _get_experiment_hash()
-        
-    def _get_experiment_hash(self):
-        hyperparams = self.hyperparameters.copy()
-        str_repr = json.dumps(hyperparams, ensure_ascii=True, sort_keys=True)
-        hash_repr = hashlib.sha256(str_repr.encode()).hexdigest()
-        return hash_repr
-    """

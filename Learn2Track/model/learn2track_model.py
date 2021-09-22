@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 import logging
-from typing import Any, Tuple, Union
+from typing import Any, Tuple, Union, List
 
 import torch
 from torch import Tensor
 from torch.nn.utils.rnn import PackedSequence, pack_sequence
 
-from dwi_ml.model.direction_getter_models import AbstractDirectionGetterModel
+from dwi_ml.model.direction_getter_models import keys_to_direction_getters
 from dwi_ml.model.main_models import MainModelAbstract
 
+from Learn2Track.model.embeddings import keys_to_embeddings
 from Learn2Track.model.stacked_rnn import StackedRNN
-from Learn2Track.model.embeddings import EmbeddingAbstract
 
 
 class Learn2TrackModel(MainModelAbstract):
@@ -24,56 +24,117 @@ class Learn2TrackModel(MainModelAbstract):
     distribution parameters).
     """
 
-    def __init__(self,
-                 previous_dir_embedding_model: EmbeddingAbstract,
-                 input_embedding_model: EmbeddingAbstract,
-                 rnn_model: StackedRNN,
-                 direction_getter_model: AbstractDirectionGetterModel):
+    def __init__(self, nb_previous_dirs: int, prev_dirs_embedding_size: int,
+                 prev_dirs_embedding_key, input_size: int, input_embedding_key,
+                 input_embedding_size_ratio: float, rnn_key: str,
+                 rnn_layer_sizes: List[int], use_skip_connection: bool,
+                 use_layer_normalization: bool, dropout: float,
+                 direction_getter_key, **_):
         """
-        Parameters
-        ----------
-        previous_dir_embedding_model: EmbeddingAbstract
-            Instantiated model for the previous directions embedding. Outputs
-            will be concatenated to inputs before entering the rnn_model.
-            See examples in Learn2track.model.embeddings.
-        input_embedding_model: EmbeddingAbstract
-            Instantiated model for the input embedding.
-            See examples in Learn2track.model.embeddings.
-        rnn_model : StackedRNN
-            Instantiated recurrent model to process sequences. The StackedRNN
-            is composend of RNN + normalization + dropout + relu + skip
-            connections.
-        direction_getter_model : AbstractDirectionGetterModel
-            Instantiated model used to convert the RNN outputs into a
-            direction. See dwi_ml.model.direction_getter_models for model
-            descriptions.
+        Params
+        ------
+        input_size: int
+            This value should be known from the actual data.
+        nb_previous_dirs: int
+            Number of previous direction (i.e. [x,y,z] information) to be
+            received.
+        prev_dirs_embedding_size: int
+            How to transform prev_dir inputs (dimension = 3 * nb_previous_dirs)
+            during embedding. Total embedding size will be nb_previous_dirs *
+            user-given prev_dirs_embedding_size.
+        prev_dirs_embedding_cls: a EmbeddingAbstract class
+            One of the classes in Learn2track.model.embeddings
+        input_embedding_cls: idem
+        input_embedding_size_ratio: float
+            Considering as the input size is not known beforehand, not asking
+            user for the embedding size but rather for a ratio. Ex: 0.5 means
+            the embedding size will be half the input size.
+        rnn_key: either 'LSTM' or 'GRU'
+        rnn_layer_sizes: List[int]
+            The list of layer sizes for the rnn. The real size will also depend
+            on the skip_connection and layer_normalization parameters.
+        use_skip_connection: bool
+
+        use_layer_normalization: bool
+
         """
         super().__init__()
 
-        self.prev_dir_embedding = previous_dir_embedding_model
-        self.input_embedding = input_embedding_model
-        self.rnn_model = rnn_model
-        self.direction_getter = direction_getter_model
+        # 0. Verifying keys
+        print("prev_dirs_embedding_key: {}".format(prev_dirs_embedding_key))
+        if prev_dirs_embedding_key:
+            prev_dirs_emb_cls = keys_to_embeddings[prev_dirs_embedding_key]
+        else:
+            prev_dirs_emb_cls = None
+        input_embedding_cls = keys_to_embeddings[input_embedding_key]
+        direction_getter_cls = keys_to_direction_getters[direction_getter_key]
+        # and rnn_key will be checked in stacked_rnn.
+
+        # 1. Previous dir embedding
+        self.nb_previous_dirs = nb_previous_dirs
+        if nb_previous_dirs > 0:
+            self.prev_dirs_embedding_size = prev_dirs_embedding_size
+            self.prev_dirs_embedding = prev_dirs_emb_cls(
+                input_size=nb_previous_dirs * 3,
+                output_size=nb_previous_dirs * self.prev_dirs_embedding_size)
+        else:
+            self.prev_dirs_embedding_size = 0
+            self.prev_dirs_embedding = None
+
+        # 2. Input embedding
+        self.input_size = input_size
+        self.input_embedding_size_ratio = input_embedding_size_ratio
+        input_embedding_size = int(input_size * input_embedding_size_ratio)
+        self.input_embedding = input_embedding_cls(
+            input_size=input_size, output_size=input_embedding_size)
+
+        # 3. Stacked RNN
+        rnn_input_size = self.prev_dirs_embedding_size + input_embedding_size
+        self.use_skip_connection = use_skip_connection
+        self.use_layer_normalization = use_layer_normalization
+        self.rnn_key = rnn_key
+        self.rnn_layer_sizes = rnn_layer_sizes
+        self.dropout = dropout
+        self.rnn_model = StackedRNN(
+            rnn_key, rnn_input_size, rnn_layer_sizes,
+            use_skip_connections=use_skip_connection,
+            use_layer_normalization=use_layer_normalization, dropout=dropout)
+
+        # 4. Direction getter
+        # toDo: add parameters. Ex: dropout and nb_gaussians
+        self.direction_getter = direction_getter_cls(
+            self.rnn_model.output_size)
 
     @property
     def hyperparameters(self):
+        # Expected to be none...
         hyp = {
-            'prev_dir_embedding': self.prev_dir_embedding.hyperparameters if
-            self.prev_dir_embedding else None,
+            'prev_dirs_embedding': self.prev_dirs_embedding.hyperparameters if
+            self.prev_dirs_embedding else None,
             'input_embedding': self.input_embedding.hyperparameters,
             'rnn_model': self.rnn_model.hyperparameters,
             'direction_getter': self.direction_getter.hyperparameters,
+            'input_size': int(self.input_size),
         }
         return hyp
 
     @property
     def attributes(self):
+        # Every parameter necessary to build the different layers again.
+        # converting np.int64 to int to allow json dumps.
         attrs = {
-            'prev_dir_embedding': self.prev_dir_embedding.attributes if
-            self.prev_dir_embedding else None,
-            'input_embedding': self.input_embedding.attributes,
-            'rnn_model': self.rnn_model.attributes,
-            'direction_getter': self.direction_getter.attributes,
+            'nb_previous_dirs': self.nb_previous_dirs,
+            'prev_dirs_embedding_size': self.prev_dirs_embedding_size,
+            'prev_dirs_embedding_key': None if self.prev_dirs_embedding is None
+            else self.prev_dirs_embedding_model.attributes['key'],
+            'input_embedding_key': self.input_embedding.attributes['key'],
+            'input_embedding_size_ratio': self.input_embedding_size_ratio,
+            'rnn_key': self.rnn_key,
+            'rnn_layer_sizes': self.rnn_layer_sizes,
+            'use_skip_connection': self.use_skip_connection,
+            'use_layer_normalization': self.use_layer_normalization,
+            'dropout': self.dropout,
+            'direction_getter_key': self.direction_getter.attributes['key']
         }
         return attrs
 
@@ -84,8 +145,8 @@ class Learn2TrackModel(MainModelAbstract):
         that the dataloader may use more than one method in parallel."""
         self.log = log
         self.input_embedding.set_log(log)
-        if self.prev_dir_embedding:
-            self.prev_dir_embedding.set_log(log)
+        if self.prev_dirs_embedding:
+            self.prev_dirs_embedding.set_log(log)
         self.rnn_model.set_log(log)
         self.direction_getter.set_log(log)
 
@@ -120,7 +181,7 @@ class Learn2TrackModel(MainModelAbstract):
                        "(on tensor)...")
         if prev_dirs is not None:
             self.log.debug("Input size: {}".format(prev_dirs.data.shape[-1]))
-            prev_dirs = self.prev_dir_embedding(prev_dirs.data)
+            prev_dirs = self.prev_dirs_embedding(prev_dirs.data)
             self.log.debug("Output size: {}".format(prev_dirs.shape[-1]))
 
         self.log.debug("================ 2. Inputs embedding (on tensor)...")
@@ -182,7 +243,7 @@ class Learn2TrackModel(MainModelAbstract):
             inputs = pack_sequence(inputs, enforce_sorted=False)
 
         elif (isinstance(inputs, PackedSequence) and
-                isinstance(prev_dirs, PackedSequence)):
+              isinstance(prev_dirs, PackedSequence)):
             logging.debug("Previous dirs and inputs are both PackedSequence. "
                           "Trying to concatenate data. Input shape: {},"
                           "prev_dir shape: {}"

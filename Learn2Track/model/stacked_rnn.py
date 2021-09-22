@@ -115,7 +115,6 @@ class StackedRNN(ModelAbstract):
             'use_skip_connections': self.use_skip_connections,
             'use_layer_normalization': self.use_layer_normalization,
             'dropout': self.dropout,
-            # 'prepared_layers': self.rnn_layers  -> not json serializable
         }
         return attrs
 

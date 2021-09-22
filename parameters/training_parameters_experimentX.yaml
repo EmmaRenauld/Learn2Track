@@ -146,6 +146,15 @@ model:
         # dropout: float
         #     If >0: add a dropout layer between RNN layers.
         dropout: 0.5
+        # use_skip_connections: bool
+        #     Set to true to add skip connections. The pattern for skip
+        #     connections is as seen here:
+        #     https://arxiv.org/pdf/1308.0850v5.pdf
+        use_skip_connection: True
+        # use_layer_normalization: bool
+        #     set to true to add layer normalization. Explained here:
+        #     https://arxiv.org/pdf/1607.06450.pdf
+        use_layer_normalization: True
     direction_getter:
         # key: str
         #     One of 'cosine-regression', 'l2-regression',
