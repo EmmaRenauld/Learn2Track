@@ -37,15 +37,13 @@ class Learn2TrackTrainer(DWIMLTrainer):
     def __init__(self,
                  batch_sampler_training: BatchSampler,
                  batch_sampler_validation: BatchSampler,
-                 model: Learn2TrackModel,
-                 experiment_path: str, experiment_name: str,
-                 learning_rate: float = 0.001, weight_decay: float = 0.01,
-                 max_epochs: int = None, max_batches_per_epoch: int = 10000,
-                 patience: int = None, device: torch.device = None,
-                 num_cpu_workers: int = None, taskman_managed: bool = None,
-                 use_gpu: bool = None, comet_workspace: str = None,
-                 comet_project: str = None, from_checkpoint: bool = False,
-                 clip_grad: float = None, **_):
+                 model: Learn2TrackModel, experiment_path: str,
+                 experiment_name: str, learning_rate: float,
+                 weight_decay: float, max_epochs: int,
+                 max_batches_per_epoch: int, patience: int,
+                 nb_cpu_workers: int, taskman_managed: bool, use_gpu: bool,
+                 comet_workspace: str, comet_project: str,
+                 from_checkpoint: bool, clip_grad: float, **_):
         """ Init trainer
 
         Additionnal values compared to super:
@@ -56,9 +54,9 @@ class Learn2TrackTrainer(DWIMLTrainer):
         super().__init__(batch_sampler_training, batch_sampler_validation,
                          model, experiment_path, experiment_name,
                          learning_rate, weight_decay, max_epochs,
-                         max_batches_per_epoch, patience, device,
-                         num_cpu_workers, taskman_managed, use_gpu,
-                         comet_workspace, comet_project, from_checkpoint)
+                         max_batches_per_epoch, patience, nb_cpu_workers,
+                         taskman_managed, use_gpu, comet_workspace,
+                         comet_project, from_checkpoint)
 
         self.clip_grad = clip_grad
 
@@ -82,11 +80,11 @@ class Learn2TrackTrainer(DWIMLTrainer):
     # init_comet as super
 
     def estimate_nb_batches_per_epoch(self):
-        logging.info("Learn2track: Estimating training epoch statistics...")
+        logging.debug("Learn2track: Estimating training epoch statistics...")
         n_train_batches_capped, _ = self._compute_epoch_stats(
             self.train_batch_sampler)
 
-        logging.info("Learn2track: Estimating validation epoch statistics...")
+        logging.debug("Learn2track: Estimating validation epoch statistics...")
         n_valid_batches_capped, _ = self._compute_epoch_stats(
             self.valid_batch_sampler)
 
@@ -106,15 +104,15 @@ class Learn2TrackTrainer(DWIMLTrainer):
             for batches: (goes in train_one_batch)
                 self.model.run_model_and_compute_loss
 
-        Hint: If your sampler was instantiated with avoid_cpu_computations,
-        you need to deal with your data accordingly here!
-        Use the sampler's self.load_batch_final_step method.
+        Hint: If your sampler was instantiated with use_gpu, you need to deal
+        with your data accordingly here! Use the sampler's
+        self.load_batch_final_step method.
 
         Parameters
         ----------
         data : tuple of (List, dict)
             This is the output of the BatchSequencesSampleOneInputVolume's
-            load_batch() function. If avoid_cpu_computations, data is
+            load_batch() function. If use_gpu, data is
             (batch_streamlines, final_streamline_ids_per_subj).
             Else, data is (batch_inputs, batch_directions).
         batch_sampler: BatchSequencesSamplerOneInputVolume
@@ -143,13 +141,18 @@ class Learn2TrackTrainer(DWIMLTrainer):
             grad_context = torch.no_grad
 
         with grad_context():
-            if batch_sampler.avoid_cpu_computations:
+            if batch_sampler.wait_for_gpu:
+                if not self.use_gpu:
+                    logging.warning(
+                        "Batch sampler has been created with use_gpu=True, so "
+                        "some computations have been skipped to allow user to "
+                        "compute them later on GPU. Now in training, however, "
+                        "you are using CPU, so this was not really useful.\n"
+                        "Maybe this is an error in the code?")
                 # Data interpolation has not been done yet. GPU computations
                 # need to be done here in the main thread. Running final steps
                 # of data preparation.
-                self.log.debug('Finalizing input data preparation on GPU. '
-                               'Data should contain streamlines + ids: {}'
-                               .format(type(data)))
+                self.log.debug('Finalizing input data preparation on GPU)')
                 batch_streamlines, final_s_ids_per_subj = data
 
                 # Concerning the streamlines: directions not computed yet
@@ -174,11 +177,11 @@ class Learn2TrackTrainer(DWIMLTrainer):
             # - idem for batch_streamlines
             # - batch_prev_dirs should be a list of tensors, or empty if no
             #   previous_dirs is used.
-            # We don't actually need to pack data now because the first step
-            # of the model will be the embedding, which can be done separately
-            # But we want to send data to cuda now, and we would need to send
-            # all tensors from lists separately to cuda.
             # toDo Is it faster to loop on tensors and send each to cuda?
+            #  We don't actually need to pack data now because the first step
+            #  of the model will be the embedding, which can be done separately
+            #  But we want to send data to cuda now, and we would need to send
+            #  all tensors from lists separately to cuda.
             batch_inputs = pack_sequence(batch_inputs, enforce_sorted=False)
             if len(batch_prev_dirs) > 0:
                 batch_prev_dirs = pack_sequence(batch_prev_dirs,
@@ -189,9 +192,11 @@ class Learn2TrackTrainer(DWIMLTrainer):
                                              enforce_sorted=False)
 
             if self.use_gpu:
+                # Tensors coming from the Dataloader will be on cpu. Sending
+                # to GPU.
                 batch_inputs = batch_inputs.cuda()
                 batch_directions = batch_directions.cuda()
-                if batch_prev_dirs and len(batch_prev_dirs) > 0:
+                if batch_prev_dirs:
                     batch_prev_dirs = batch_prev_dirs.cuda()
 
             if is_training:
@@ -215,7 +220,7 @@ class Learn2TrackTrainer(DWIMLTrainer):
                 # now. We don't do it every update because it can be time
                 # consuming.
                 torch.cuda.empty_cache()
-                model_outputs, _ = self.model(batch_inputs)
+                model_outputs, _ = self.model(batch_inputs, batch_prev_dirs)
 
             # Compute loss
             self.log.debug('\n=== Computing loss ===\n')
@@ -259,6 +264,8 @@ class Learn2TrackTrainer(DWIMLTrainer):
 
                 # Update parameters
                 self.optimizer.step()
+            else:
+                grad_norm = None
 
             if self.use_gpu:
                 log_gpu_memory_usage()
@@ -266,9 +273,10 @@ class Learn2TrackTrainer(DWIMLTrainer):
         return mean_loss.cpu().item(), grad_norm
 
     @classmethod
-    def init_from_checkpoint(cls, batch_sampler_training: BatchSampler,
-                             batch_sampler_validation: BatchSampler,
-                             model, checkpoint_state: dict):
+    def init_from_checkpoint(
+            cls, batch_sampler_training: BatchSampler,
+            batch_sampler_validation: BatchSampler, model: Learn2TrackModel,
+            checkpoint_state: dict, new_patience, new_max_epochs):
         """
         During save_checkpoint(), checkpoint_state.pkl is saved. Loading it
         back offers a dict that can be used to instantiate an experiment and
@@ -276,25 +284,20 @@ class Learn2TrackTrainer(DWIMLTrainer):
         """
 
         # Use super's method but return this learn2track trainer as 'cls'.
-        experiment, checkpoint_state = super(cls, cls).init_from_checkpoint(
+        experiment = super(cls, cls).init_from_checkpoint(
             batch_sampler_training, batch_sampler_validation, model,
-            checkpoint_state)
+            checkpoint_state, new_patience, new_max_epochs)
 
         return experiment
 
-    # save_checkpoint_state: same as super
-
     def _prepare_checkpoint_state(self) -> dict:
         checkpoint_state = super()._prepare_checkpoint_state()
-        other_params = {
-            'optimizer_state': self.optimizer.state_dict(),
-            'weights': self.model.state_dict(),
-            'grad_norm_monitor_state': self.grad_norm_monitor.get_state()
-        }
-        checkpoint_state.update(other_params)
-
+        checkpoint_state['params_for_init'].update({
+            'clip_grad': self.clip_grad
+        })
         return checkpoint_state
 
+    # save_checkpoint_state:       same as super
     # _should quit                 same as user
     # _update_taskman_report       same as user
     # _save_log_from_array         same as user
@@ -320,7 +323,7 @@ class Learn2TrackTrainer(DWIMLTrainer):
         # e.g. when resuming an experiment
         sampler_rng_state_bk = batch_sampler.np_rng.get_state()
 
-        dataloader = DataLoader(batch_sampler.data_source,
+        dataloader = DataLoader(batch_sampler.dataset,
                                 batch_sampler=batch_sampler,
                                 num_workers=0,
                                 collate_fn=batch_sampler.load_batch)
@@ -339,11 +342,12 @@ class Learn2TrackTrainer(DWIMLTrainer):
         # Restore RNG states. OK??? Voir avec Philippe
         batch_sampler.np_rng.set_state(sampler_rng_state_bk)
 
-        # VERY IMPORTANT: Reset HDF handles
-        # Parallel workers each need to initialize independent HDF5 handles
-        if batch_sampler.data_source.is_lazy:
-            batch_sampler.data_source.hdf_handle = None
-            batch_sampler.data_source.volume_cache_manager = None
+        # This is not true anymore.
+        # --- VERY IMPORTANT: Reset HDF handles
+        # --- Parallel workers each need to initialize independent HDF5 handles
+        if batch_sampler.dataset.is_lazy:
+            # --- batch_sampler.dataset.hdf_handle = None
+            batch_sampler.dataset.volume_cache_manager = None
 
         # Compute stats about epoch
         # toDO CHANGE THIS TO COUNT TIMESTEPS INSTEAD OF STREAMLINES
@@ -359,12 +363,16 @@ class Learn2TrackTrainer(DWIMLTrainer):
             else:
                 batch_sizes.append(len(sample_data))
         avg_batch_size = int(np.mean(batch_sizes))
+        if avg_batch_size == 0:
+            raise ValueError("The allowed batch size ({}) is too small! "
+                             "Sampling 0 streamlines per batch."
+                             .format(batch_sampler.batch_size))
         logging.debug("We have computed that in average, each batch has a "
                       "size of ~{} (in number of datapoints)"
                       .format(avg_batch_size))
 
         # Define the number of batch per epoch
-        dataset_size = batch_sampler.data_source.total_streamlines[
+        dataset_size = batch_sampler.dataset.total_streamlines[
             batch_sampler.streamline_group]
         n_batches = int(dataset_size / avg_batch_size)
         n_batches_capped = min(n_batches, self.max_batches_per_epochs)
@@ -372,18 +380,7 @@ class Learn2TrackTrainer(DWIMLTrainer):
         logging.info("Dataset had {} streamlines (before data augmentation)\n"
                      "We will be using approximately {} iterations (i.e. "
                      "batches) per epoch (but not more than the allowed {}).\n"
-                     .format(dataset_size, n_batches, n_batches_capped))
+                     .format(dataset_size, n_batches,
+                             self.max_batches_per_epochs))
 
         return n_batches_capped, avg_batch_size
-
-    """
-    Deleted.
-    if experiment_name is None:
-        experiment_name = _get_experiment_hash()
-        
-    def _get_experiment_hash(self):
-        hyperparams = self.hyperparameters.copy()
-        str_repr = json.dumps(hyperparams, ensure_ascii=True, sort_keys=True)
-        hash_repr = hashlib.sha256(str_repr.encode()).hexdigest()
-        return hash_repr
-    """

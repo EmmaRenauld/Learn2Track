@@ -10,8 +10,8 @@ from dwi_ml.model.direction_getter_models import keys_to_direction_getters
 from Learn2Track.model.embeddings import keys_to_embeddings
 from Learn2Track.model.stacked_rnn import StackedRNN
 from Learn2Track.model.learn2track_model import Learn2TrackModel
-from Learn2Track.utils.packed_sequences import (unpack_sequence,
-                                                unpack_tensor_from_indices)
+from Learn2Track.packed_sequences import (unpack_sequence,
+                                          unpack_tensor_from_indices)
 
 
 def prepare_tensor(a):
