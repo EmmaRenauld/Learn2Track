@@ -85,9 +85,9 @@ setup(
     # In this case, 'data_file' will be installed into '<sys.prefix>/my_data'
     data_files=[],
 
-    # To provide executable scripts, use entry points in preference to the
-    # "scripts" keyword. Entry points provide cross-platform support and allow
+    # To provide executable scripts_python, use entry points in preference to the
+    # "scripts_python" keyword. Entry points provide cross-platform support and allow
     # pip to create the appropriate form of executable for the target platform.
     entry_points={},
-    scripts=glob.glob("scripts/*.py") + glob.glob("scripts/*.sh")
+    scripts=glob.glob("scripts_python/*.py") + glob.glob("scripts_bash/*.sh")
 )

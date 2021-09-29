@@ -4,9 +4,8 @@
 """
 Train a model for Learn2Track
 
-See and example of the yaml file in the parameters folder.
+See an example of the yaml file in the parameters folder.
 """
-import argparse
 import logging
 import os
 from os import path

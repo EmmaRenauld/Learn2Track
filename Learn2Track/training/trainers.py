@@ -366,7 +366,7 @@ class Learn2TrackTrainer(DWIMLTrainer):
         if avg_batch_size == 0:
             raise ValueError("The allowed batch size ({}) is too small! "
                              "Sampling 0 streamlines per batch."
-                             .format(batch_sampler.batch_size))
+                             .format(batch_sampler.max_batch_size))
         logging.debug("We have computed that in average, each batch has a "
                       "size of ~{} (in number of datapoints)"
                       .format(avg_batch_size))
