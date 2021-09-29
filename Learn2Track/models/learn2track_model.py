@@ -6,11 +6,11 @@ import torch
 from torch import Tensor
 from torch.nn.utils.rnn import PackedSequence, pack_sequence
 
-from dwi_ml.model.direction_getter_models import keys_to_direction_getters
-from dwi_ml.model.main_models import MainModelAbstract
+from dwi_ml.models.direction_getter_models import keys_to_direction_getters
+from dwi_ml.models.embeddings_on_packed_sequences import keys_to_embeddings
+from dwi_ml.models.main_models import MainModelAbstract
 
-from Learn2Track.model.embeddings import keys_to_embeddings
-from Learn2Track.model.stacked_rnn import StackedRNN
+from Learn2Track.models.stacked_rnn import StackedRNN
 
 
 class Learn2TrackModel(MainModelAbstract):
@@ -306,7 +306,7 @@ class Learn2TrackModel(MainModelAbstract):
                                    states: Any) -> Tuple[Tensor, Any]:
         """
         Runs a batch of single-step inputs through the model, then get the
-        tracking directions. E.g. for probabilistic models, we need to sample
+        tracking directions. E.g. for probabilistic model, we need to sample
         the tracking directions.
 
         Parameters

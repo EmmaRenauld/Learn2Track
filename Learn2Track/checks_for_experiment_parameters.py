@@ -8,10 +8,10 @@ from dwi_ml.experiment.checks_for_experiment_parameters import (
     check_bool_instance_not_none, check_float_or_none_instance,
     check_int_or_none_instance, check_str_or_none_instance,
     check_all_experiment_parameters as dwi_ml_checks)
-from dwi_ml.model.direction_getter_models import keys_to_direction_getters
+from dwi_ml.models.direction_getter_models import keys_to_direction_getters
+from dwi_ml.models.embeddings_on_packed_sequences import keys_to_embeddings
 
-from Learn2Track.model.embeddings import keys_to_embeddings
-from Learn2Track.model.stacked_rnn import keys_to_rnn_class
+from Learn2Track.models.stacked_rnn import keys_to_rnn_class
 
 
 def check_clip_grad(clip_grad: bool):

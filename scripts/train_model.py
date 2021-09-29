@@ -16,14 +16,14 @@ import yaml
 from dwi_ml.data.dataset.multi_subject_containers import MultiSubjectDataset
 from dwi_ml.experiment.monitoring import EarlyStoppingError
 from dwi_ml.experiment.timer import Timer
-from dwi_ml.model.batch_samplers import (
+from dwi_ml.models.batch_samplers import (
     BatchStreamlinesSampler1IPV as BatchSampler)
 from dwi_ml.training.utils import parse_args_train_model
 from dwi_ml.utils import format_dict_to_str
 
 from Learn2Track.checks_for_experiment_parameters import (
     check_all_experiment_parameters)
-from Learn2Track.model.learn2track_model import Learn2TrackModel
+from Learn2Track.models.learn2track_model import Learn2TrackModel
 from Learn2Track.training.trainers import Learn2TrackTrainer
 
 

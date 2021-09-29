@@ -5,13 +5,13 @@ import numpy as np
 import torch
 from torch.nn.utils.rnn import pack_sequence, PackedSequence
 
-from dwi_ml.model.direction_getter_models import keys_to_direction_getters
-
-from Learn2Track.model.embeddings import keys_to_embeddings
-from Learn2Track.model.stacked_rnn import StackedRNN
-from Learn2Track.model.learn2track_model import Learn2TrackModel
-from Learn2Track.packed_sequences import (unpack_sequence,
+from dwi_ml.data.packed_sequences import (unpack_sequence,
                                           unpack_tensor_from_indices)
+from dwi_ml.models.direction_getter_models import keys_to_direction_getters
+from dwi_ml.models.embeddings_on_packed_sequences import keys_to_embeddings
+
+from Learn2Track.models.learn2track_model import Learn2TrackModel
+from Learn2Track.models.stacked_rnn import StackedRNN
 
 
 def prepare_tensor(a):

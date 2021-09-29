@@ -24,7 +24,7 @@
 #       └── bundles  :                                                        #
 #           └── tractoflow_wholebrain: Tracking/tracking                      #
 #                                                                             #
-# If you need something else for your model, you can modify this script.      #
+# If you need something else for your models, you can modify this script.      #
 #                                                                             #
 # See our doc for more information                                            #
 # (https://dwi-ml.readthedocs.io/en/latest/data_organization.html#ref-organization).
