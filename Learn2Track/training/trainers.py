@@ -13,11 +13,11 @@ from torch.utils.data.dataloader import DataLoader
 
 from dwi_ml.experiment.learning_utils import compute_gradient_norm
 from dwi_ml.experiment.memory import log_gpu_memory_usage
-from dwi_ml.model.batch_samplers import (
+from dwi_ml.models.batch_samplers import (
     BatchStreamlinesSampler1IPV as BatchSampler)
 from dwi_ml.training.trainers import DWIMLTrainer
 
-from Learn2Track.model.learn2track_model import Learn2TrackModel
+from Learn2Track.models.learn2track_model import Learn2TrackModel
 VERSION = 0
 
 
@@ -366,7 +366,7 @@ class Learn2TrackTrainer(DWIMLTrainer):
         if avg_batch_size == 0:
             raise ValueError("The allowed batch size ({}) is too small! "
                              "Sampling 0 streamlines per batch."
-                             .format(batch_sampler.batch_size))
+                             .format(batch_sampler.max_batch_size))
         logging.debug("We have computed that in average, each batch has a "
                       "size of ~{} (in number of datapoints)"
                       .format(avg_batch_size))

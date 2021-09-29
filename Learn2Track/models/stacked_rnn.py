@@ -5,7 +5,7 @@ import torch
 from torch import Tensor
 from torch.nn.utils.rnn import PackedSequence
 
-from dwi_ml.model.main_models import ModelAbstract
+from dwi_ml.models.main_models import ModelAbstract
 
 keys_to_rnn_class = {'lstm': torch.nn.LSTM,
                      'gru': torch.nn.GRU}
@@ -232,7 +232,7 @@ class StackedRNN(ModelAbstract):
         if self.use_skip_connections:
             if was_packed:
                 # Can't just replace last_output.data, throws an attribute
-                # error. Solutions: create the models as inplace (ex,
+                # error. Solutions: create the model as inplace (ex,
                 # torch.nn.Dropout(p=p, inplace=True)), or reconstruct a
                 # packedSequence
                 last_output = PackedSequence(torch.cat(outputs, dim=-1),
