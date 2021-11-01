@@ -1,39 +1,14 @@
-# Step A = preparation
-# Step B = Running. Similar to dwi_ml/please_copy_and_adapt/ALL_STEPS.sh
-
-
 
 #########
-# A.0. Choose study
+# Choose study
 #########
-
-# To run on my computer:
-my_bash_scripts="/home/local/USHERBROOKE/rene2201/my_applications/scil_vital/learn2track/USER_SCRIPTS/"
-data_root="/home/local/USHERBROOKE/rene2201/Documents"
-
-# To run on Beluga:
-my_bash_scripts="/home/renaulde/my_applications/learn2track/USER_SCRIPTS/"
-data_root="/home/renaulde/projects/rrg-descotea/renaulde"
-
-study=fibercup
-study=ismrm2015_noArtefact
-study=ismrm2015_basic
-study=neher99_noArtefact
-study=neher99_basic
-study=hcp
-study=tractoinferno
-study=test_retest
+study=MY_STUDY
+database_folder=MY_PATH
+subjects_list=SUBJS.txt
 
 #########
 # Find folders and subject lists
 #########
-
-# Load "global" variables: the names of my folders
-    source $my_bash_scripts/my_variables.sh $data_root
-    eval database_folder=\${database_folder_$study}
-    eval subjects_list=\${subjects_list_$study}
-    cd $database_folder
-
 
 # Printing infos on current study
     echo -e "=========LEARN2TRACK\n" \
@@ -46,7 +21,7 @@ study=test_retest
 
 
 #########
-# A.1. Organize from tractoflow
+# Organize from tractoflow
 #########
     rm -r $database_folder/dwi_ml_ready
     bash $my_bash_scripts/organize_from_tractoflow.sh $database_folder $subjects_list
@@ -56,7 +31,7 @@ study=test_retest
 
 
 #########
-# A.2. Organize from recobundles
+# Organize from recobundles
 #########
     bash $my_bash_scripts/organize_from_recobundles.sh $database_folder RecobundlesX/multi_bundles $subjects_list
 
@@ -64,7 +39,7 @@ study=test_retest
 # ===========================================================================
 
 #########
-# B.1. Create hdf5 dataset
+# Create hdf5 dataset
 #########
     # Choosing the parameters for this study
     eval config_file=\${config_file_$study}
@@ -73,38 +48,37 @@ study=test_retest
     now=`date +'%Y_%d_%m_%HH%MM'`
     name=${study}_$now
 
-    # Choosing bundles
-    #eval bundles_txt=\${bundles_$study}
-    #bundles=$(<bundles.txt)
-    #option_bundles="--bundles $bundles"
-    option_bundles=""
-
-    #option_logging="--logging debug"
-    option_logging="--logging info"
-    option_logging=""
-
     # Paramaters that I keep fixed for all studies
-    mask_for_standardization="masks/wm_mask.nii.gz"
+    mask="masks/wm_mask.nii.gz"
     space="rasmm"  # {rasmm,vox,voxmm}
 
     echo -e "=========RUNNING LEARN2TRACK HDF5 DATASET CREATION\n" \
-         "     Chosen study: $study \n"         \
+         "     Study: $name \n" \
          "     Config file: $config_file \n"       \
          "     Training subjects: $training_subjs \n"  \
-         "     Validation subjects: $validation_subjs \n"  \
-         "     Bundles: $option_bundles"
+         "     Validation subjects: $validation_subjs \n" \
+         "     mask for standardization: $mask \n" \
+         "     Complete config_file infos: \n"
+    cat $config_file
 
     # Preparing hdf5.
-    create_hdf5_dataset.py --force --name $name --std_mask $mask_for_standardization \
-        $option_bundles $option_logging --space $space $database_folder $config_file \
-        $training_subjs $validation_subjs --enforce_bundles_presence True
+    create_hdf5_dataset.py --force --name $name --std_mask $mask \
+        --logging info --space $space --enforce_files_presence True \
+        --independent_modalities True \
+        $database_folder/dwi_ml_ready $database_folder $config_file \
+        $training_subjs $validation_subjs
 
 ############
-# B.2. Train model
+# Train model
 ############
 
-    python $learn2track/scripts_python/train_model.py --loggin info \
+    python train_model.py --loggin info \
         --input_group 'input' --target_group 'streamlines' \
         --hdf5_file $database_folder/hdf5/ismrm2015_noArtefact_test.hdf5 \
         --yaml_parameters $learn2track/parameters/training_parameters_experimentX.yaml \
         --experiment_name test_experiment1 $experiment_folder/Learn2track
+
+    # Re-run from checkpoint
+    python train_model.py --loggin info \
+        --experiment_name test_experiment1 --experiment_path $main_folder/experiments/Learn2Track \
+        --override_checkpoint_max_epochs 20

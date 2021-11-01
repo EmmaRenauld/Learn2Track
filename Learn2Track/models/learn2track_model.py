@@ -203,7 +203,7 @@ class Learn2TrackModel(MainModelAbstract):
         return n_previous_dirs
 
     def forward(self, inputs: PackedSequence, prev_dirs: PackedSequence,
-                hidden_states: Any = None) -> Tuple[Any, Any]:
+                hidden_reccurent_states: Any = None) -> Tuple[Any, Any]:
         """Run the model on a batch of sequences.
 
         Parameters
@@ -214,7 +214,7 @@ class Learn2TrackModel(MainModelAbstract):
             implementation.
         prev_dirs: PackedSequence
             Batch of past directions
-        hidden_states : Any
+        hidden_reccurent_states : Any
             The current hidden states of the (stacked) RNN model.
 
         Returns
@@ -222,7 +222,7 @@ class Learn2TrackModel(MainModelAbstract):
         outputs : Any
             Output data, ready to be passed to either `compute_loss()` or
             `get_tracking_directions()`.
-        out_hidden_states : Any
+        out_hidden_recurrent_states : Any
             The last step hidden states (h_(t-1), C_(t-1) for LSTM) for each
             layer.
         """
@@ -258,7 +258,8 @@ class Learn2TrackModel(MainModelAbstract):
 
         # Run the inputs sequences through the stacked RNN
         self.logger.debug("================ 4. Stacked RNN....")
-        rnn_output, out_hidden_states = self.rnn_model(inputs, hidden_states)
+        rnn_output, out_hidden_recurrent_states = self.rnn_model(
+            inputs, hidden_reccurent_states)
         self.logger.debug("Output size: {}".format(rnn_output.data.shape[-1]))
 
         # Run the rnn outputs into the direction getter model
@@ -268,7 +269,7 @@ class Learn2TrackModel(MainModelAbstract):
 
         # 4. Return the hidden states. Necessary for the generative
         # (tracking) part, done step by step.
-        return final_directions, out_hidden_states
+        return final_directions, out_hidden_recurrent_states
 
     def _concat_prev_dirs(self, inputs, prev_dirs):
         """Concatenating data depends on the data type."""
@@ -358,3 +359,15 @@ class Learn2TrackModel(MainModelAbstract):
         mean_loss = self.direction_getter.compute_loss(outputs, targets)
 
         return mean_loss
+
+    def get_tracking_direction_det(self, model_outputs):
+        next_dir = self.direction_getter.get_tracking_direction_det(
+            model_outputs)
+        next_dir = next_dir.detach().numpy().squeeze()
+        return next_dir
+
+    def sample_tracking_direction_prob(self, model_outputs):
+        logging.debug("Getting a deterministic direction from {}"
+                      .format(type(self.direction_getter)))
+        return self.direction_getter.sample_tracking_direction_prob(
+            model_outputs)
