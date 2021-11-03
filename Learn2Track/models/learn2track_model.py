@@ -107,7 +107,6 @@ class Learn2TrackModel(MainModelAbstract):
 
     @property
     def hyperparameters(self):
-        # Expected to be none...
         hyp = {
             'prev_dirs_embedding': self.prev_dirs_embedding.hyperparameters if
             self.prev_dirs_embedding else None,
@@ -126,7 +125,7 @@ class Learn2TrackModel(MainModelAbstract):
             'nb_previous_dirs': self.nb_previous_dirs,
             'prev_dirs_embedding_size': self.prev_dirs_embedding_size,
             'prev_dirs_embedding_key': None if self.prev_dirs_embedding is None
-            else self.prev_dirs_embedding_model.attributes['key'],
+            else self.prev_dirs_embedding.attributes['key'],
             'input_embedding_key': self.input_embedding.attributes['key'],
             'input_embedding_size_ratio': self.input_embedding_size_ratio,
             'rnn_key': self.rnn_key,

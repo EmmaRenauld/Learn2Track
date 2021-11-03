@@ -80,13 +80,16 @@ class Learn2TrackTrainer(DWIMLTrainer):
     # init_comet as super
 
     def estimate_nb_batches_per_epoch(self):
-        logging.debug("Learn2track: Estimating training epoch statistics...")
+        logging.info("Learn2track: Estimating training epoch statistics...")
         n_train_batches_capped, _ = self._compute_epoch_stats(
             self.train_batch_sampler)
 
-        logging.debug("Learn2track: Estimating validation epoch statistics...")
-        n_valid_batches_capped, _ = self._compute_epoch_stats(
-            self.valid_batch_sampler)
+        n_valid_batches_capped = None
+        if self.valid_batch_sampler is not None:
+            logging.info("Learn2track: Estimating validation epoch "
+                         "statistics...")
+            n_valid_batches_capped, _ = self._compute_epoch_stats(
+                self.valid_batch_sampler)
 
         return n_train_batches_capped, n_valid_batches_capped
 
@@ -335,18 +338,14 @@ class Learn2TrackTrainer(DWIMLTrainer):
         # streamlines and subjects that have already been used is resetted
         # each time, and there is a possibility that the same streamlines will
         # be sampled more than once. But this is just for stats so ok.
-        logging.debug("Running the dataloader for 5 iterations, just to "
-                      "compute statistics..")
+        logging.info("Running the dataloader for 5 iterations, just to "
+                     "compute statistics..")
         sample_batches = [next(iter(dataloader))[0] for _ in range(5)]
 
         # Restore RNG states. OK??? Voir avec Philippe
         batch_sampler.np_rng.set_state(sampler_rng_state_bk)
 
-        # This is not true anymore.
-        # --- VERY IMPORTANT: Reset HDF handles
-        # --- Parallel workers each need to initialize independent HDF5 handles
         if batch_sampler.dataset.is_lazy:
-            # --- batch_sampler.dataset.hdf_handle = None
             batch_sampler.dataset.volume_cache_manager = None
 
         # Compute stats about epoch
@@ -354,8 +353,8 @@ class Learn2TrackTrainer(DWIMLTrainer):
         #  Philippe se créait même un nouveau batch_sampler avec split_ratio=0
         #  mais ici ça fitte pas avec le abstract batch sampler. Donc changer
         #  le compte plutôt.
-        logging.debug('(THIS NEEDS DEBUGGING. Check sample_data output and '
-                      'see if we can count the number of points correctly)')
+        logging.warning('(THIS NEEDS DEBUGGING. Check sample_data output and '
+                        'see if we can count the number of points correctly)')
         batch_sizes = []
         for sample_data in sample_batches:
             if isinstance(sample_data, PackedSequence):
@@ -367,13 +366,13 @@ class Learn2TrackTrainer(DWIMLTrainer):
             raise ValueError("The allowed batch size ({}) is too small! "
                              "Sampling 0 streamlines per batch."
                              .format(batch_sampler.max_batch_size))
-        logging.debug("We have computed that in average, each batch has a "
-                      "size of ~{} (in number of datapoints)"
-                      .format(avg_batch_size))
+        logging.info("We have computed that in average, each batch has a "
+                     "size of ~{} (in number of datapoints)"
+                     .format(avg_batch_size))
 
         # Define the number of batch per epoch
-        dataset_size = batch_sampler.dataset.total_streamlines[
-            batch_sampler.streamline_group]
+        dataset_size = batch_sampler.dataset.total_nb_streamlines[
+            batch_sampler.streamline_group_idx]
         n_batches = int(dataset_size / avg_batch_size)
         n_batches_capped = min(n_batches, self.max_batches_per_epochs)
 

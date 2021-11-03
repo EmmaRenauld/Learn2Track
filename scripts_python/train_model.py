@@ -13,12 +13,12 @@ from os import path
 import yaml
 
 from dwi_ml.experiment.monitoring import EarlyStoppingError
+import dwi_ml.experiment.parameter_description as params_d_dwiml
 from dwi_ml.experiment.timer import Timer
 from dwi_ml.training.training_utils import parse_args_train_model, \
     prepare_data, prepare_batch_sampler_1i_pv, check_unused_args_for_checkpoint
-import dwi_ml.training.parameter_description as params_d_dwiml
 from dwi_ml.utils import format_dict_to_str
-from scilpy.io.utils import assert_inputs_exist
+from scilpy.io.utils import assert_inputs_exist, assert_outputs_exist
 
 from Learn2Track.checks_for_experiment_parameters import (
     check_all_experiment_parameters)
@@ -27,7 +27,7 @@ from Learn2Track.training.trainers import Learn2TrackTrainer
 import Learn2Track.training.parameter_description as params_d
 
 
-def project_specific_args(p):
+def add_project_specific_args(p):
     p.add_argument('--input_group', metavar='i',
                    help='Name of the input group. \n'
                         '**If a checkpoint exists, this information is '
@@ -92,12 +92,13 @@ def init_from_checkpoint(args):
     return trainer
 
 
-def init_from_args(args):
+def init_from_args(p, args):
     # Check that all files exist
     assert_inputs_exist(p, [args.hdf5_file, args.yaml_parameters])
+    assert_outputs_exist(p, args, args.experiment_path)
 
     # Load parameters
-    with open(args.parameters_filename) as f:
+    with open(args.yaml_parameters) as f:
         yaml_parameters = yaml.safe_load(f.read())
 
     # Perform checks
@@ -135,7 +136,8 @@ def init_from_args(args):
     (training_batch_sampler,
      validation_batch_sampler) = prepare_batch_sampler_1i_pv(
         dataset, sampler_params, sampler_params)
-    input_size = dataset.nb_features[args.input_group]
+    input_group_idx = dataset.volume_groups.index(args.input_group)
+    input_size = dataset.nb_features[input_group_idx]
     model = prepare_model(input_size, model_params)
 
     # Instantiate trainer
@@ -150,6 +152,7 @@ def init_from_args(args):
 
 def main():
     p = parse_args_train_model()
+    add_project_specific_args(p)
     args = p.parse_args()
 
     if args.print_description:
@@ -164,7 +167,7 @@ def main():
                                 "checkpoint")):
         trainer = init_from_checkpoint(args)
     else:
-        trainer = init_from_args(args)
+        trainer = init_from_args(p, args)
 
     # Run (or continue) the experiment
     try:
