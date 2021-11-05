@@ -6,6 +6,7 @@ Train a model for Learn2Track
 
 See an example of the yaml file in the parameters folder.
 """
+import json
 import logging
 import os
 from os import path
@@ -40,17 +41,19 @@ def add_project_specific_args(p):
                         'necessary. Else, mandatory.')
 
 
-def prepare_model(input_size, model_params):
+def prepare_model(input_size, nb_neighbors, model_params):
     """
     Instantiate model
     """
     with Timer("\n\nPreparing model", newline=True, color='yellow'):
         logging.info("Input size inferred from the data: {}"
                      .format(input_size))
+        logging.info("Times the number of neighborhood points + 1: {}"
+                     .format(nb_neighbors))
+        input_size *= (nb_neighbors + 1)
         model = Learn2TrackModel(input_size=input_size, **model_params)
-        logging.info("Learn2track model instantiated with attributes: \n" +
-                     format_dict_to_str(model.attributes))
-
+        logging.info("Learn2track model user-defined parameters: \n" +
+                     format_dict_to_str(model.params))
     return model
 
 
@@ -77,7 +80,9 @@ def init_from_checkpoint(args):
         checkpoint_state['train_sampler_params'],
         checkpoint_state['valid_sampler_params'])
     input_size = checkpoint_state['model_params']['input_size']
-    model = prepare_model(input_size, checkpoint_state['model_params'])
+    nb_neighbors = len(training_batch_sampler.neighborhood_points)
+    model = prepare_model(input_size, nb_neighbors,
+                          checkpoint_state['model_params'])
 
     # Instantiate trainer
     with Timer("\n\nPreparing trainer",
@@ -138,7 +143,8 @@ def init_from_args(p, args):
         dataset, sampler_params, sampler_params)
     input_group_idx = dataset.volume_groups.index(args.input_group)
     input_size = dataset.nb_features[input_group_idx]
-    model = prepare_model(input_size, model_params)
+    nb_neighbors = len(training_batch_sampler.neighborhood_points)
+    model = prepare_model(input_size, nb_neighbors, model_params)
 
     # Instantiate trainer
     with Timer("\n\nPreparing trainer", newline=True, color='red'):
@@ -168,12 +174,15 @@ def main():
         trainer = init_from_checkpoint(args)
     else:
         trainer = init_from_args(p, args)
+    logging.info("Trainer user-defined parameters : \n{}".format(
+        json.dumps(trainer.params, indent=4, sort_keys=True,
+                   default=(lambda x: str(x)))))
 
     # Run (or continue) the experiment
     try:
         with Timer("\n\n****** Running model!!! ********",
                    newline=True, color='magenta'):
-            trainer.run_model()
+            trainer.run_experiment()
     except EarlyStoppingError as e:
         print(e)
 

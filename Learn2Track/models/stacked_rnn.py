@@ -106,8 +106,8 @@ class StackedRNN(ModelAbstract):
                 last_layer_size += self.input_size
 
     @property
-    def attributes(self):
-        attrs = {
+    def params(self):
+        params = {
             'rnn_torch_key': self.rnn_torch_key,
             'input_size': self.input_size,
             'output_size': self.output_size,
@@ -116,7 +116,7 @@ class StackedRNN(ModelAbstract):
             'use_layer_normalization': self.use_layer_normalization,
             'dropout': self.dropout,
         }
-        return attrs
+        return params
 
     @property
     def output_size(self):

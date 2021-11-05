@@ -7,7 +7,7 @@ from torch import Tensor
 from torch.nn.utils.rnn import PackedSequence, pack_sequence
 
 from dwi_ml.models.direction_getter_models import keys_to_direction_getters
-from dwi_ml.models.embeddings_on_packed_sequences import keys_to_embeddings
+from dwi_ml.models.embeddings_on_tensors import keys_to_embeddings
 from dwi_ml.models.main_models import MainModelAbstract
 
 from Learn2Track.models.stacked_rnn import StackedRNN
@@ -76,7 +76,7 @@ class Learn2TrackModel(MainModelAbstract):
             self.prev_dirs_embedding_size = prev_dirs_embedding_size
             self.prev_dirs_embedding = prev_dirs_emb_cls(
                 input_size=nb_previous_dirs * 3,
-                output_size=nb_previous_dirs * self.prev_dirs_embedding_size)
+                output_size=self.prev_dirs_embedding_size)
         else:
             self.prev_dirs_embedding_size = 0
             self.prev_dirs_embedding = None
@@ -106,36 +106,20 @@ class Learn2TrackModel(MainModelAbstract):
             self.rnn_model.output_size)
 
     @property
-    def hyperparameters(self):
-        hyp = {
-            'prev_dirs_embedding': self.prev_dirs_embedding.hyperparameters if
-            self.prev_dirs_embedding else None,
-            'input_embedding': self.input_embedding.hyperparameters,
-            'rnn_model': self.rnn_model.hyperparameters,
-            'direction_getter': self.direction_getter.hyperparameters,
-            'input_size': int(self.input_size),
-        }
-        return hyp
-
-    @property
-    def attributes(self):
+    def params(self):
         # Every parameter necessary to build the different layers again.
         # converting np.int64 to int to allow json dumps.
-        attrs = {
-            'nb_previous_dirs': self.nb_previous_dirs,
-            'prev_dirs_embedding_size': self.prev_dirs_embedding_size,
-            'prev_dirs_embedding_key': None if self.prev_dirs_embedding is None
-            else self.prev_dirs_embedding.attributes['key'],
-            'input_embedding_key': self.input_embedding.attributes['key'],
+        params = {
+            'prev_dirs_embedding':
+                self.prev_dirs_embedding.params if
+                self.prev_dirs_embedding else None,
+            # This should contain the input size:
             'input_embedding_size_ratio': self.input_embedding_size_ratio,
-            'rnn_key': self.rnn_key,
-            'rnn_layer_sizes': self.rnn_layer_sizes,
-            'use_skip_connection': self.use_skip_connection,
-            'use_layer_normalization': self.use_layer_normalization,
-            'dropout': self.dropout,
-            'direction_getter_key': self.direction_getter.attributes['key']
+            'input_embedding': self.input_embedding.params,
+            'rnn_model': self.rnn_model.params,
+            'direction_getter': self.direction_getter.params,
         }
-        return attrs
+        return params
 
     def set_log(self, log: logging.Logger):
         """Possibility to pass a tqdm-compatible logger in case the dataloader

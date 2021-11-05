@@ -15,9 +15,7 @@ model:
              None (nb_previous_dirs must then be 0).
         embedding_output_size: int
            Size of the output after passing the previous dirs through the
-           embedding. (The real output size is embedding_output_size *
-           nb_previous_dirs).  A VOIR AVEC PHILIPPE. 3->128 ME SEMBLE TROP!
-           CHANGÉ POUR 3
+           embedding.
     input:
         embedding: str
              One of 'no_embedding', 'nn_embedding' or 'cnn_embedding'.

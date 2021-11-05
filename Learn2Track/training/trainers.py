@@ -61,21 +61,13 @@ class Learn2TrackTrainer(DWIMLTrainer):
         self.clip_grad = clip_grad
 
     @property
-    def attributes(self):
-        attrs = super().attributes
-        attrs.update({
+    def params(self):
+        params = super().params
+        params.update({
             'learn2track_trainer_version': VERSION,
             'clip_grad': self.clip_grad
         })
-        return attrs
-
-    @property
-    def hyperparameters(self):
-        hyperparameters = super().hyperparameters
-        hyperparameters.update({
-            'model_hyperparameters': self.model.hyperparameters,
-        })
-        return hyperparameters
+        return params
 
     # init_comet as super
 

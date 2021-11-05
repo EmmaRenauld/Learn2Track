@@ -106,5 +106,5 @@ study=test_retest
     python $learn2track/scripts_python/train_model.py --loggin info \
         --input_group 'input' --target_group 'streamlines' \
         --hdf5_file $database_folder/hdf5/ismrm2015_noArtefact_test.hdf5 \
-        --parameters_filename $learn2track/parameters/training_parameters_experimentX.yaml \
+        --yaml_parameters $learn2track/parameters/training_parameters_experimentX.yaml \
         --experiment_name test_experiment1 $experiment_folder/Learn2track
