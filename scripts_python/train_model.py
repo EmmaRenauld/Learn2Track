@@ -41,22 +41,6 @@ def add_project_specific_args(p):
                         'necessary. Else, mandatory.')
 
 
-def prepare_model(input_size, nb_neighbors, model_params):
-    """
-    Instantiate model
-    """
-    with Timer("\n\nPreparing model", newline=True, color='yellow'):
-        logging.info("Input size inferred from the data: {}"
-                     .format(input_size))
-        logging.info("Times the number of neighborhood points + 1: {}"
-                     .format(nb_neighbors))
-        input_size *= (nb_neighbors + 1)
-        model = Learn2TrackModel(input_size=input_size, **model_params)
-        logging.info("Learn2track model user-defined parameters: \n" +
-                     format_dict_to_str(model.params))
-    return model
-
-
 def init_from_checkpoint(args):
     check_unused_args_for_checkpoint(args, ['input_group', 'target_group'])
 
@@ -72,17 +56,19 @@ def init_from_checkpoint(args):
         args.override_checkpoint_max_epochs)
 
     # Instantiate everything from checkpoint_state
-    # toDo : Check that training set and validation set had the same params
-    dataset = prepare_data(checkpoint_state['dataset_params'])
+    dataset = prepare_data(checkpoint_state['train_data_params'])
+    # toDo Verify that valid dataset is the same.
+    #  checkpoint_state['valid_data_params']
     (training_batch_sampler,
      validation_batch_sampler) = prepare_batch_sampler_1i_pv(
         dataset,
         checkpoint_state['train_sampler_params'],
         checkpoint_state['valid_sampler_params'])
-    input_size = checkpoint_state['model_params']['input_size']
-    nb_neighbors = len(training_batch_sampler.neighborhood_points)
-    model = prepare_model(input_size, nb_neighbors,
-                          checkpoint_state['model_params'])
+    with Timer("\n\nPreparing model", newline=True, color='yellow'):
+        model = Learn2TrackModel.init_from_checkpoint(
+            **checkpoint_state['model_params'])
+        logging.info("Learn2track model user-defined parameters: \n" +
+                     format_dict_to_str(model.params_per_layer))
 
     # Instantiate trainer
     with Timer("\n\nPreparing trainer",
@@ -144,7 +130,15 @@ def init_from_args(p, args):
     input_group_idx = dataset.volume_groups.index(args.input_group)
     input_size = dataset.nb_features[input_group_idx]
     nb_neighbors = len(training_batch_sampler.neighborhood_points)
-    model = prepare_model(input_size, nb_neighbors, model_params)
+    with Timer("\n\nPreparing model", newline=True, color='yellow'):
+        logging.info("Input size inferred from the data: {}"
+                     .format(input_size))
+        logging.info("Times the number of neighborhood points + 1: {}"
+                     .format(nb_neighbors))
+        input_size *= (nb_neighbors + 1)
+        model = Learn2TrackModel(input_size=input_size, **model_params)
+        logging.info("Learn2track model user-defined parameters: \n" +
+                     format_dict_to_str(model.params_per_layer))
 
     # Instantiate trainer
     with Timer("\n\nPreparing trainer", newline=True, color='red'):
