@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
-from typing import Any, Tuple, Union, List
+from typing import Any, Tuple, Union, List, Iterable
 
 import torch
 from torch import Tensor
@@ -8,12 +8,12 @@ from torch.nn.utils.rnn import PackedSequence, pack_sequence
 
 from dwi_ml.models.direction_getter_models import keys_to_direction_getters
 from dwi_ml.models.embeddings_on_tensors import keys_to_embeddings
-from dwi_ml.models.main_models import MainModelAbstract
+from dwi_ml.models.main_models import MainModelAbstractNeighborsPreviousDirs
 
 from Learn2Track.models.stacked_rnn import StackedRNN
 
 
-class Learn2TrackModel(MainModelAbstract):
+class Learn2TrackModel(MainModelAbstractNeighborsPreviousDirs):
     """
     Recurrent tracking model.
 
@@ -24,8 +24,13 @@ class Learn2TrackModel(MainModelAbstract):
     distribution parameters).
     """
 
-    def __init__(self, nb_previous_dirs: int, prev_dirs_embedding_size: int,
-                 prev_dirs_embedding_key, input_size: int, input_embedding_key,
+    def __init__(self, experiment_name,
+                 nb_previous_dirs: int, prev_dirs_embedding_size: int,
+                 prev_dirs_embedding_key, nb_features: int,
+                 input_group_name,
+                 neighborhood_type: Union[str, None],
+                 neighborhood_radius: Union[int, float, Iterable[float]],
+                 input_embedding_key,
                  input_embedding_size_ratio: float, rnn_key: str,
                  rnn_layer_sizes: List[int], use_skip_connection: bool,
                  use_layer_normalization: bool, dropout: float,
@@ -69,23 +74,22 @@ class Learn2TrackModel(MainModelAbstract):
         [1] https://arxiv.org/pdf/1308.0850v5.pdf
         [2] https://arxiv.org/pdf/1607.06450.pdf
         """
-        super().__init__()
+        super().__init__(experiment_name, nb_features, input_group_name,
+                         nb_previous_dirs, neighborhood_type,
+                         neighborhood_radius)
 
         # 0. Verifying keys
         self.prev_dirs_embedding_key = prev_dirs_embedding_key
+        self.input_embedding_key = input_embedding_key
+        self.direction_getter_key = direction_getter_key
+        # and rnn_key will be checked in stacked_rnn.
+
+        # 1. Previous dir embedding
         if prev_dirs_embedding_key:
             prev_dirs_emb_cls = keys_to_embeddings[prev_dirs_embedding_key]
         else:
             prev_dirs_emb_cls = None
-        self.input_embedding_key = input_embedding_key
-        input_embedding_cls = keys_to_embeddings[input_embedding_key]
-        self.direction_getter_key = direction_getter_key
-        direction_getter_cls = keys_to_direction_getters[direction_getter_key]
-        # and rnn_key will be checked in stacked_rnn.
-
-        # 1. Previous dir embedding
-        self.nb_previous_dirs = nb_previous_dirs
-        if nb_previous_dirs > 0:
+        if self.nb_previous_dirs > 0:
             self.prev_dirs_embedding_size = prev_dirs_embedding_size
             self.prev_dirs_embedding = prev_dirs_emb_cls(
                 input_size=nb_previous_dirs * 3,
@@ -95,14 +99,14 @@ class Learn2TrackModel(MainModelAbstract):
             self.prev_dirs_embedding = None
 
         # 2. Input embedding
-        self.input_size = input_size
+        input_embedding_cls = keys_to_embeddings[input_embedding_key]
         self.input_embedding_size_ratio = input_embedding_size_ratio
-        input_embedding_size = int(input_size * input_embedding_size_ratio)
+        input_emb_size = int(self.input_size * input_embedding_size_ratio)
         self.input_embedding = input_embedding_cls(
-            input_size=input_size, output_size=input_embedding_size)
+            input_size=self.input_size, output_size=input_emb_size)
 
         # 3. Stacked RNN
-        rnn_input_size = self.prev_dirs_embedding_size + input_embedding_size
+        rnn_input_size = self.prev_dirs_embedding_size + input_emb_size
         self.use_skip_connection = use_skip_connection
         self.use_layer_normalization = use_layer_normalization
         self.rnn_key = rnn_key
@@ -114,6 +118,7 @@ class Learn2TrackModel(MainModelAbstract):
             use_layer_normalization=use_layer_normalization, dropout=dropout)
 
         # 4. Direction getter
+        direction_getter_cls = keys_to_direction_getters[direction_getter_key]
         # toDo: add parameters. Ex: dropout and nb_gaussians
         self.direction_getter = direction_getter_cls(
             self.rnn_model.output_size)
@@ -136,12 +141,12 @@ class Learn2TrackModel(MainModelAbstract):
     def params(self):
         # Every parameter necessary to build the different layers again.
         # during checkpoint state saving.
-        # converting np.int64 to int to allow json dumps.
-        params = {
-            'nb_previous_dirs': self.nb_previous_dirs,
+
+        params = super().params
+
+        params.update({
             'prev_dirs_embedding_size': self.prev_dirs_embedding_size,
             'prev_dirs_embedding_key': self.prev_dirs_embedding_key,
-            'input_size': int(self.input_size),
             'input_embedding_key': self.input_embedding_key,
             'input_embedding_size_ratio': self.input_embedding_size_ratio,
             'rnn_key': self.rnn_key,
@@ -150,7 +155,7 @@ class Learn2TrackModel(MainModelAbstract):
             'use_layer_normalization': self.use_layer_normalization,
             'dropout': self.dropout,
             'direction_getter_key': self.direction_getter_key
-        }
+        })
 
         return params
 
