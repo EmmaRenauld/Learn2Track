@@ -38,13 +38,13 @@ rm -r $experiment_folder/Learn2track/test_experiment1/checkpoint
 python $learn2track/scripts_python/train_model.py --loggin info \
       --input_group 'input' --target_group 'streamlines' \
       --hdf5_file $database_folder/hdf5/ismrm2015_noArtefact_test.hdf5 \
-      --parameters_filename $learn2track/parameters/training_parameters_experimentX.yaml \
+      --yaml_parameters $learn2track/parameters/training_parameters_experimentX.yaml \
       --experiment_name test_experiment1 $experiment_folder/Learn2track
 
 # Then, try again, it will load from checkpoint!
 python $learn2track/scripts_python/train_model.py --loggin info \
       --input_group 'input' --target_group 'streamlines' \
       --hdf5_file $database_folder/hdf5/ismrm2015_noArtefact_test.hdf5 \
-      --parameters_filename $learn2track/parameters/training_parameters_experimentX.yaml \
+      --yaml_parameters $learn2track/parameters/training_parameters_experimentX.yaml \
       --experiment_name test_experiment1 $experiment_folder/Learn2track \
       --override_checkpoint_patience 3 --override_checkpoint_max_epochs 3

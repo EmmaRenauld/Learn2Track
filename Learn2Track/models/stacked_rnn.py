@@ -33,20 +33,18 @@ class StackedRNN(ModelAbstract):
             features at each step. Note that the complete input will be of
             shape (batch, seq, input_size).
         layer_sizes : list of int
-            Size of each hidden layer
+            Size of each hidden layer. The real size will depend
+            on the skip_connection parameter.
         use_skip_connections : bool, optional
             If true, concatenate the model input to the input of each hidden
             layer, and concatenate all hidden layers output as the output of
             the model. See [1] (Figure 1) to visualize the architecture.
-            Default: False.
         use_layer_normalization : bool, optional
             If true, apply layer normalization to the forward connections. See
-            [2]. Default: False.
-        dropout : float, optional
+            [2].
+        dropout : float
             If non-zero, introduces a `Dropout` layer on the outputs of each
-            RNN layer except the last layer, with dropout probability equal to
-            :attr:`dropout`. Default: 0.
-
+            RNN layer except the last layer, with given dropout probability.
         ---
         [1] https://arxiv.org/pdf/1308.0850v5.pdf
         [2] https://arxiv.org/pdf/1607.06450.pdf
@@ -106,8 +104,8 @@ class StackedRNN(ModelAbstract):
                 last_layer_size += self.input_size
 
     @property
-    def attributes(self):
-        attrs = {
+    def params(self):
+        params = {
             'rnn_torch_key': self.rnn_torch_key,
             'input_size': self.input_size,
             'output_size': self.output_size,
@@ -116,7 +114,7 @@ class StackedRNN(ModelAbstract):
             'use_layer_normalization': self.use_layer_normalization,
             'dropout': self.dropout,
         }
-        return attrs
+        return params
 
     @property
     def output_size(self):

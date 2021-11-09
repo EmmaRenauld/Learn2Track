@@ -21,15 +21,16 @@ def prepare_tensor(a):
 
 def create_batch():
     # input: shape (batch=2, seq=[3,2], input_size=4)
-    nb_prev_dirs = 2
+    nb_prev_dirs = 3
 
     print("\nCreating batch: 2 streamlines, the first has 3 timepoints "
           "and the second, 2. 4 features per point. nb_previous_dirs = {}"
           .format(nb_prev_dirs))
 
-    # streamline 1: 3 timepoints
+    # streamline 1: 4 timepoints = 3 directions
     flattened_dwi1 = np.array([[10, 11, 12, 13],
                                [50, 51, 52, 53],
+                               [60, 62, 62, 63],
                                [140, 150, 160, 170]], dtype='float32')
     flattened_dwi1 = prepare_tensor(flattened_dwi1)
     directions1 = np.array([[1, 0, 0],
@@ -37,12 +38,13 @@ def create_batch():
                             [0, 1, 0]], dtype='float32')
     directions1 = prepare_tensor(directions1)
 
-    # streamline 2: 2 timepoints
+    # streamline 2: 3 timepoints = 2 directions
     flattened_dwi2 = np.array([[10, 11, 12, 13],
+                               [20, 21, 22, 23],
                                [140, 150, 160, 170]], dtype='float32')
     flattened_dwi2 = prepare_tensor(flattened_dwi2)
-    directions2 = np.array([[1, 0, 0],
-                            [0, 1, 0]], dtype='float32')
+    directions2 = np.array([[3, 0, 0],
+                            [0, 3, 0]], dtype='float32')
     directions2 = prepare_tensor(directions2)
 
     # batch = 2 streamlines
@@ -50,13 +52,23 @@ def create_batch():
     batch_directions = [directions1, directions2]
 
     # previous_dirs like in the dwi_ml's batch sampler
-    # Size should be 2 x [nb_time_step, nb_previous_dir x 3]
-    empty_coord = torch.zeros((1, 3), dtype=torch.float32) * float('NaN')
+    # When previous dirs do not exist (ex, the 2nd previous dir at the first
+    # time step), value is NaN.
+    empty_coord = torch.zeros((1, 3), dtype=torch.float32)
+
     previous_dirs = \
-        [torch.cat([torch.cat((empty_coord.repeat(i + 1, 1),
+        [torch.cat([torch.cat((empty_coord.repeat(min(len(s), i + 1), 1),
                                s[:-(i + 1)]))
                     for i in range(nb_prev_dirs)], dim=1)
          for s in batch_directions]
+
+    print("-Previous dirs should be of size 2: {}".format(len(previous_dirs)))
+    print("-Each tensor should be of size [nb_time_step, nb_previous_dir x 3] "
+          "(the n previous dirs at each point).")
+    print("  First tensor should be of size [3, 3x3]: {}"
+          .format(previous_dirs[0].shape))
+    print("  Second one should be of size [2, 3x3]: {}\n"
+          .format(previous_dirs[1].shape))
 
     return batch_x_data, batch_directions, previous_dirs, nb_prev_dirs
 
@@ -79,26 +91,17 @@ def test_packing(streamlines):
 
 def test_prev_dir_embedding(prev_directions, nb_prev_dirs):
 
-    print('==> previous_dirs should be: \n'
-          '     - nb_streamlines * size [nb_points_i * nb_prev_dirs*3]] = '
-          '3x6 and 2x6 if it is a list, \n'
-          '     - nb_points_total * nb_prev_dirs*3 = 5x6 if it is a packed '
-          'sequence\n'
-          '{}'
-          .format(prev_directions))
-
     print('\nTesting identity embedding...')
     cls = keys_to_embeddings['no_embedding']
     model = cls(input_size=nb_prev_dirs * 3, output_size=nb_prev_dirs * 3)
     output = model(prev_directions)
-    print('==> Should return itself. Output is:\n{}' .format(output))
+    print('==> Should return itself. Output is: {}' .format(output))
 
     print('\nTesting neural network embedding, ...')
     cls = keys_to_embeddings['nn_embedding']
-    model = cls(input_size=nb_prev_dirs * 3, output_size=8, nan_to_num=0)
+    model = cls(input_size=nb_prev_dirs * 3, output_size=8)
     output = model(prev_directions)
-    print('==> Should return output of size 8. Result is: \n'
-          '{}'
+    print('==> Should return output of size 8. Result is: {}'
           .format(output))
     return model
 
@@ -120,6 +123,7 @@ def test_stacked_rnn(inputs):
 
     print('\nTesting forward when inputs is a {}...'.format(type(inputs)))
     model(inputs)
+    print('...done')
 
     # output information printed during forward on debug logging
     return model
@@ -130,31 +134,14 @@ def test_learn2track(model_prev_dirs, inputs, prev_dirs):
     print('Using same prev dirs embeding model as previous test.')
 
     print('\nPreparing model...')
-    # 1. embedding pf prev_dirs: using already instantiated
-    # 2. embedding of input
-    cls = keys_to_embeddings['no_embedding']
-    model_input_embedding = cls(input_size=4, output_size=4)
-
-    # 3. stacked_rnn
-    input_embedding_size = model_input_embedding.output_size
+    input_size=4
     prev_dir_embedding_size = model_prev_dirs.output_size
-    model_rnn = StackedRNN('lstm',
-                           input_embedding_size + prev_dir_embedding_size,
-                           [10, 12],
-                           use_skip_connections=True,
-                           use_layer_normalization=True,
-                           dropout=0.4)
 
-    # 4. Direction getter
-    chosen_direction_getter = \
-        keys_to_direction_getters['cosine-regression']
-    model_direction = chosen_direction_getter(model_rnn.output_size)
-
-    # 5. Final model.
-    model = Learn2TrackModel(previous_dir_embedding_model=model_prev_dirs,
-                             input_embedding_model=model_input_embedding,
-                             rnn_model=model_rnn,
-                             direction_getter_model=model_direction)
+    model = Learn2TrackModel(nb_previous_dirs, prev_dir_embedding_size,
+                             'nn_embedding', input_size, 'nn_embedding', 1,
+                             'lstm', [10, 12], use_skip_connection=True,
+                             use_layer_normalization=True, dropout=0.5,
+                             direction_getter_key='cosine-regression')
 
     print("\nUsing forward...")
     directions, state = model.forward(inputs, prev_dirs)
@@ -195,7 +182,7 @@ if __name__ == '__main__':
     fake_directions = pack_sequence(fake_directions, enforce_sorted=False)
 
     print('\n****************************\n'
-          'Testing previous dir embedding\n'
+          'Testing previous dir embedding on packed sequences\n'
           '****************************\n')
     model_prev_dir = test_prev_dir_embedding(fake_prev_dirs, nb_previous_dirs)
 

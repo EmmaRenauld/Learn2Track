@@ -7,7 +7,7 @@ from torch import Tensor
 from torch.nn.utils.rnn import PackedSequence, pack_sequence
 
 from dwi_ml.models.direction_getter_models import keys_to_direction_getters
-from dwi_ml.models.embeddings_on_packed_sequences import keys_to_embeddings
+from dwi_ml.models.embeddings_on_tensors import keys_to_embeddings
 from dwi_ml.models.main_models import MainModelAbstract
 
 from Learn2Track.models.stacked_rnn import StackedRNN
@@ -33,8 +33,6 @@ class Learn2TrackModel(MainModelAbstract):
         """
         Params
         ------
-        input_size: int
-            This value should be known from the actual data.
         nb_previous_dirs: int
             Number of previous direction (i.e. [x,y,z] information) to be
             received.
@@ -42,31 +40,46 @@ class Learn2TrackModel(MainModelAbstract):
             How to transform prev_dir inputs (dimension = 3 * nb_previous_dirs)
             during embedding. Total embedding size will be nb_previous_dirs *
             user-given prev_dirs_embedding_size.
-        prev_dirs_embedding_cls: a EmbeddingAbstract class
-            One of the classes in Learn2track.model.embeddings
-        input_embedding_cls: idem
+        prev_dirs_embedding_key: str,
+            Key to a embedding class (one of
+            dwi_ml.models.embeddings_on_tensors.keys_to_embeddings)
+        input_size: int
+            This value should be known from the actual data.
+        input_embedding_key: str
+            Key to a embedding class (one of
+            dwi_ml.models.embeddings_on_tensors.keys_to_embeddings)
         input_embedding_size_ratio: float
             Considering as the input size is not known beforehand, not asking
             user for the embedding size but rather for a ratio. Ex: 0.5 means
             the embedding size will be half the input size.
         rnn_key: either 'LSTM' or 'GRU'
         rnn_layer_sizes: List[int]
-            The list of layer sizes for the rnn. The real size will also depend
-            on the skip_connection and layer_normalization parameters.
+            The list of layer sizes for the rnn. The real size will depend
+            on the skip_connection parameter.
         use_skip_connection: bool
-
+            Whether to use skip connections. See [1] (Figure 1) to visualize
+            the architecture.
         use_layer_normalization: bool
-
+            Wheter to apply layer normalization to the forward connections. See
+            [2].
+        dropout : float
+            If non-zero, introduces a `Dropout` layer on the outputs of each
+            RNN layer except the last layer, with given dropout probability.
+        ---
+        [1] https://arxiv.org/pdf/1308.0850v5.pdf
+        [2] https://arxiv.org/pdf/1607.06450.pdf
         """
         super().__init__()
 
         # 0. Verifying keys
-        print("prev_dirs_embedding_key: {}".format(prev_dirs_embedding_key))
+        self.prev_dirs_embedding_key = prev_dirs_embedding_key
         if prev_dirs_embedding_key:
             prev_dirs_emb_cls = keys_to_embeddings[prev_dirs_embedding_key]
         else:
             prev_dirs_emb_cls = None
+        self.input_embedding_key = input_embedding_key
         input_embedding_cls = keys_to_embeddings[input_embedding_key]
+        self.direction_getter_key = direction_getter_key
         direction_getter_cls = keys_to_direction_getters[direction_getter_key]
         # and rnn_key will be checked in stacked_rnn.
 
@@ -76,7 +89,7 @@ class Learn2TrackModel(MainModelAbstract):
             self.prev_dirs_embedding_size = prev_dirs_embedding_size
             self.prev_dirs_embedding = prev_dirs_emb_cls(
                 input_size=nb_previous_dirs * 3,
-                output_size=nb_previous_dirs * self.prev_dirs_embedding_size)
+                output_size=self.prev_dirs_embedding_size)
         else:
             self.prev_dirs_embedding_size = 0
             self.prev_dirs_embedding = None
@@ -106,37 +119,49 @@ class Learn2TrackModel(MainModelAbstract):
             self.rnn_model.output_size)
 
     @property
-    def hyperparameters(self):
-        # Expected to be none...
-        hyp = {
-            'prev_dirs_embedding': self.prev_dirs_embedding.hyperparameters if
-            self.prev_dirs_embedding else None,
-            'input_embedding': self.input_embedding.hyperparameters,
-            'rnn_model': self.rnn_model.hyperparameters,
-            'direction_getter': self.direction_getter.hyperparameters,
-            'input_size': int(self.input_size),
+    def params_per_layer(self):
+        params = {
+            'prev_dirs_embedding':
+                self.prev_dirs_embedding.params if
+                self.prev_dirs_embedding else None,
+            # This should contain the input size:
+            'input_embedding_size_ratio': self.input_embedding_size_ratio,
+            'input_embedding': self.input_embedding.params,
+            'rnn_model': self.rnn_model.params,
+            'direction_getter': self.direction_getter.params
         }
-        return hyp
+        return params
 
     @property
-    def attributes(self):
+    def params(self):
         # Every parameter necessary to build the different layers again.
+        # during checkpoint state saving.
         # converting np.int64 to int to allow json dumps.
-        attrs = {
+        params = {
             'nb_previous_dirs': self.nb_previous_dirs,
             'prev_dirs_embedding_size': self.prev_dirs_embedding_size,
-            'prev_dirs_embedding_key': None if self.prev_dirs_embedding is None
-            else self.prev_dirs_embedding_model.attributes['key'],
-            'input_embedding_key': self.input_embedding.attributes['key'],
+            'prev_dirs_embedding_key': self.prev_dirs_embedding_key,
+            'input_size': int(self.input_size),
+            'input_embedding_key': self.input_embedding_key,
             'input_embedding_size_ratio': self.input_embedding_size_ratio,
             'rnn_key': self.rnn_key,
             'rnn_layer_sizes': self.rnn_layer_sizes,
             'use_skip_connection': self.use_skip_connection,
             'use_layer_normalization': self.use_layer_normalization,
             'dropout': self.dropout,
-            'direction_getter_key': self.direction_getter.attributes['key']
+            'direction_getter_key': self.direction_getter_key
         }
-        return attrs
+
+        return params
+
+    @classmethod
+    def init_from_checkpoint(cls, **params):
+        """
+        Params is saved from model.params when the trainer saves the
+        checkpoint.
+        """
+        # Nothing to do, we can call it directly.
+        return cls(**params)
 
     def set_log(self, log: logging.Logger):
         """Possibility to pass a tqdm-compatible logger in case the dataloader
