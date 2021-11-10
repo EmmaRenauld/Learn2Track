@@ -23,6 +23,21 @@ model:
              Output size for the input embedding will be intput_size * ratio
              Ex: 1 means the output_size = input_size.
                  2 means input is divided into 2.
+    neighborhood:
+        sphere_radius: float
+             If not null, a neighborhood will be added to the input
+             information. This neighborhood definition lies on a sphere. It
+             will be a list of 6 positions (up, down, left, right, behind, in
+             front) at exactly given radius around each point of the
+             streamlines, in voxel space. **Can't be used together with
+             grid_radius.
+        grid_radius: int
+             If not null, a neighborhood will be added to the input
+             information. This neighborhood definition uses a list of points
+             similar to the original voxel grid around each point of the
+             streamlines. Ex: with radius 1, that's 27 points. With radius 2,
+             that's 125 points. Radius is in voxel space. **Can't be used
+             together with sphere_radius.
     rnn:
         key: str
              One of 'lstm' or 'gru'

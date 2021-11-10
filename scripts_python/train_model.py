@@ -13,11 +13,12 @@ from os import path
 
 import yaml
 
+from dwi_ml.experiment.batch_samplers import BatchStreamlinesSamplerWithInputs
 from dwi_ml.experiment.monitoring import EarlyStoppingError
 import dwi_ml.experiment.parameter_description as params_d_dwiml
 from dwi_ml.experiment.timer import Timer
 from dwi_ml.training.training_utils import parse_args_train_model, \
-    prepare_data, prepare_batch_sampler_1i_pv, check_unused_args_for_checkpoint
+    prepare_data, check_unused_args_for_checkpoint
 from dwi_ml.utils import format_dict_to_str
 from scilpy.io.utils import assert_inputs_exist, assert_outputs_exist
 
@@ -41,6 +42,40 @@ def add_project_specific_args(p):
                         'necessary. Else, mandatory.')
 
 
+def prepare_batchsamplers(dataset, train_sampler_params,
+                          valid_sampler_params, model):
+    """
+    Instantiate a batch sampler (one for training + one for validation).
+
+    There could be a discussion about merging the training and validation
+    samplers, but user could potentially set params differently between
+    training and validation (ex, more or less noise), so keeping two instances.
+
+    Returns None if the dataset has no training subjects or no validation
+    subjects, respectively.
+    """
+    with Timer("\nPreparing batch samplers...", newline=True, color='green'):
+        if dataset.training_set.nb_subjects > 0:
+            train_batch_sampler = BatchStreamlinesSamplerWithInputs(
+                dataset.training_set, model=model, **train_sampler_params)
+            logging.info(
+                "\nTraining batch sampler user-defined parameters: \n" +
+                format_dict_to_str(train_batch_sampler.params))
+        else:
+            train_batch_sampler = None
+
+        if dataset.validation_set.nb_subjects > 0:
+            valid_batch_sampler = BatchStreamlinesSamplerWithInputs(
+                dataset.validation_set, model=model, **valid_sampler_params)
+            logging.info(
+                "\nValidation batch sampler user-defined parameters: \n" +
+                format_dict_to_str(valid_batch_sampler.params))
+        else:
+            valid_batch_sampler = None
+
+    return train_batch_sampler, valid_batch_sampler
+
+
 def init_from_checkpoint(args):
     check_unused_args_for_checkpoint(args, ['input_group', 'target_group'])
 
@@ -55,24 +90,29 @@ def init_from_checkpoint(args):
         args.override_checkpoint_patience,
         args.override_checkpoint_max_epochs)
 
-    # Instantiate everything from checkpoint_state
+    # Prepare data
     dataset = prepare_data(checkpoint_state['train_data_params'])
     # toDo Verify that valid dataset is the same.
     #  checkpoint_state['valid_data_params']
-    (training_batch_sampler,
-     validation_batch_sampler) = prepare_batch_sampler_1i_pv(
-        dataset,
-        checkpoint_state['train_sampler_params'],
-        checkpoint_state['valid_sampler_params'])
+
+    # Prepare model
     with Timer("\n\nPreparing model", newline=True, color='yellow'):
         model = Learn2TrackModel.init_from_checkpoint(
             **checkpoint_state['model_params'])
         logging.info("Learn2track model user-defined parameters: \n" +
+                     format_dict_to_str(model.params))
+        logging.info("Learn2track model final parameters:" +
                      format_dict_to_str(model.params_per_layer))
 
+    # Prepare batch samplers
+    (training_batch_sampler,
+     validation_batch_sampler) = prepare_batchsamplers(
+        dataset,
+        checkpoint_state['train_sampler_params'],
+        checkpoint_state['valid_sampler_params'], model)
+
     # Instantiate trainer
-    with Timer("\n\nPreparing trainer",
-               newline=True, color='red'):
+    with Timer("\n\nPreparing trainer", newline=True, color='red'):
         trainer = Learn2TrackTrainer.init_from_checkpoint(
             training_batch_sampler,
             validation_batch_sampler,
@@ -122,23 +162,27 @@ def init_from_args(p, args):
 
     model_params.update(memory_params)
 
-    # Prepare the trainer from params
+    # Prepare the dataset
     dataset = prepare_data(dataset_params)
-    (training_batch_sampler,
-     validation_batch_sampler) = prepare_batch_sampler_1i_pv(
-        dataset, sampler_params, sampler_params)
+
+    # Preparing the model
     input_group_idx = dataset.volume_groups.index(args.input_group)
-    input_size = dataset.nb_features[input_group_idx]
-    nb_neighbors = len(training_batch_sampler.neighborhood_points)
+    nb_features = dataset.nb_features[input_group_idx]
     with Timer("\n\nPreparing model", newline=True, color='yellow'):
-        logging.info("Input size inferred from the data: {}"
-                     .format(input_size))
-        logging.info("Times the number of neighborhood points + 1: {}"
-                     .format(nb_neighbors))
-        input_size *= (nb_neighbors + 1)
-        model = Learn2TrackModel(input_size=input_size, **model_params)
-        logging.info("Learn2track model user-defined parameters: \n" +
+        logging.info("Nb of features in the data: {}"
+                     .format(nb_features))
+        model = Learn2TrackModel(experiment_name=args.experiment_name,
+                                 input_group_name='input',
+                                 nb_features=nb_features, **model_params)
+        logging.info("Learn2track model user-defined parameters: " +
+                     format_dict_to_str(model.params) + '\n')
+        logging.info("Learn2track model final parameters:" +
                      format_dict_to_str(model.params_per_layer))
+
+    # Preparing the batch sampler
+    (training_batch_sampler,
+     validation_batch_sampler) = prepare_batchsamplers(
+        dataset, sampler_params, sampler_params, model)
 
     # Instantiate trainer
     with Timer("\n\nPreparing trainer", newline=True, color='red'):
@@ -165,12 +209,15 @@ def main():
     # Verify if a checkpoint has been saved. Else create an experiment.
     if path.exists(os.path.join(args.experiment_path, args.experiment_name,
                                 "checkpoint")):
-        trainer = init_from_checkpoint(args)
+        if args.resume:
+            trainer = init_from_checkpoint(args)
+        else:
+            raise ValueError("This experiment already exists. Use --resume to "
+                             "load previous state from checkpoint and resume "
+                             "experiment.")
     else:
         trainer = init_from_args(p, args)
-    logging.info("Trainer user-defined parameters : \n{}".format(
-        json.dumps(trainer.params, indent=4, sort_keys=True,
-                   default=(lambda x: str(x)))))
+    logging.info("Trainer params : " + format_dict_to_str(trainer.params))
 
     # Run (or continue) the experiment
     try:
@@ -184,6 +231,10 @@ def main():
 
     print("Script terminated successfully. Saved experiment in folder : ")
     print(trainer.experiment_path)
+    print("Summary: ran {} epochs. Best loss was {} at epoch {}"
+          .format(trainer.current_epoch,
+                  trainer.best_epoch_monitoring.best_value,
+                  trainer.best_epoch_monitoring.best_epoch))
 
 
 if __name__ == '__main__':
