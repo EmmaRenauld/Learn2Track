@@ -6,27 +6,27 @@ Train a model for Learn2Track
 
 See an example of the yaml file in the parameters folder.
 """
-import json
 import logging
 import os
 from os import path
 
 import yaml
 
-from dwi_ml.experiment.batch_samplers import BatchStreamlinesSamplerWithInputs
 from dwi_ml.experiment.monitoring import EarlyStoppingError
-import dwi_ml.experiment.parameter_description as params_d_dwiml
 from dwi_ml.experiment.timer import Timer
+from dwi_ml.training.batch_samplers import \
+    BatchStreamlinesSamplerOneInputAndPD
 from dwi_ml.training.training_utils import parse_args_train_model, \
     prepare_data, check_unused_args_for_checkpoint
 from dwi_ml.utils import format_dict_to_str
 from scilpy.io.utils import assert_inputs_exist, assert_outputs_exist
 
-from Learn2Track.checks_for_experiment_parameters import (
+from Learn2Track.training.checks_for_tracking_parameters import (
     check_all_experiment_parameters)
 from Learn2Track.models.learn2track_model import Learn2TrackModel
 from Learn2Track.training.trainers import Learn2TrackTrainer
 import Learn2Track.training.parameter_description as params_d
+import Learn2Track.training.parameter_description_dwiml as params_d_dwiml
 
 
 def add_project_specific_args(p):
@@ -56,7 +56,7 @@ def prepare_batchsamplers(dataset, train_sampler_params,
     """
     with Timer("\nPreparing batch samplers...", newline=True, color='green'):
         if dataset.training_set.nb_subjects > 0:
-            train_batch_sampler = BatchStreamlinesSamplerWithInputs(
+            train_batch_sampler = BatchStreamlinesSamplerOneInputAndPD(
                 dataset.training_set, model=model, **train_sampler_params)
             logging.info(
                 "\nTraining batch sampler user-defined parameters: \n" +
@@ -65,7 +65,7 @@ def prepare_batchsamplers(dataset, train_sampler_params,
             train_batch_sampler = None
 
         if dataset.validation_set.nb_subjects > 0:
-            valid_batch_sampler = BatchStreamlinesSamplerWithInputs(
+            valid_batch_sampler = BatchStreamlinesSamplerOneInputAndPD(
                 dataset.validation_set, model=model, **valid_sampler_params)
             logging.info(
                 "\nValidation batch sampler user-defined parameters: \n" +
@@ -169,8 +169,7 @@ def init_from_args(p, args):
     input_group_idx = dataset.volume_groups.index(args.input_group)
     nb_features = dataset.nb_features[input_group_idx]
     with Timer("\n\nPreparing model", newline=True, color='yellow'):
-        logging.info("Nb of features in the data: {}"
-                     .format(nb_features))
+        logging.debug("Nb of features in the data: {}".format(nb_features))
         model = Learn2TrackModel(experiment_name=args.experiment_name,
                                  input_group_name='input',
                                  nb_features=nb_features, **model_params)
@@ -203,8 +202,13 @@ def main():
         print(params_d_dwiml.__doc__ + params_d.__doc__)
         exit(0)
 
-    # Initialize logger
-    logging.basicConfig(level=args.logging.upper())
+    # Initialize logger for preparation (loading data, model, experiment)
+    # If 'as_much_as_possible', we will modify the logging level when starting
+    # the training, else very ugly
+    logging_level = args.logging_choice.upper()
+    if args.logging_choice == 'as_much_as_possible':
+        logging_level = 'DEBUG'
+    logging.basicConfig(level=logging_level)
 
     # Verify if a checkpoint has been saved. Else create an experiment.
     if path.exists(os.path.join(args.experiment_path, args.experiment_name,
@@ -221,20 +225,21 @@ def main():
 
     # Run (or continue) the experiment
     try:
-        with Timer("\n\n****** Running model!!! ********",
+        with Timer("\n\n****** Training and validating model!!! ********",
                    newline=True, color='magenta'):
-            trainer.run_experiment()
+            trainer.train_and_validate(args.logging_choice)
     except EarlyStoppingError as e:
         print(e)
 
     trainer.save_model()
 
-    print("Script terminated successfully. Saved experiment in folder : ")
-    print(trainer.experiment_path)
-    print("Summary: ran {} epochs. Best loss was {} at epoch {}"
-          .format(trainer.current_epoch,
+    logging.info("Script terminated successfully. \n"
+                 "Saved experiment in folder : {}"
+                 .format(trainer.experiment_path))
+    print("Summary: ran {} epochs. Best loss was {} at epoch #{}"
+          .format(trainer.current_epoch + 1,
                   trainer.best_epoch_monitoring.best_value,
-                  trainer.best_epoch_monitoring.best_epoch))
+                  trainer.best_epoch_monitoring.best_epoch + 1))
 
 
 if __name__ == '__main__':

@@ -4,7 +4,7 @@ from typing import List
 
 """ Various arg_parser equivalents."""
 
-from dwi_ml.experiment.checks_for_experiment_parameters import (
+from dwi_ml.training.checks_for_training_parameters import (
     check_bool_instance_not_none, check_float_or_none_instance,
     check_int_or_none_instance, check_str_or_none_instance,
     check_all_experiment_parameters as dwi_ml_checks)

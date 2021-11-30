@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
+import logging
 from typing import List, Tuple, Union
 
 import torch
+from dwi_ml.utils import TqdmLoggingHandler
 from torch import Tensor
 from torch.nn.utils.rnn import PackedSequence
-
-from dwi_ml.models.main_models import ModelAbstract
 
 keys_to_rnn_class = {'lstm': torch.nn.LSTM,
                      'gru': torch.nn.GRU}
 
 
-class StackedRNN(ModelAbstract):
+class StackedRNN(torch.nn.Module):
     """
     Recurrent model with recurrent layer sizes, and optional skip connections.
 
@@ -21,7 +21,7 @@ class StackedRNN(ModelAbstract):
 
     def __init__(self, rnn_torch_key: str, input_size: int,
                  layer_sizes: List[int], use_skip_connections: bool,
-                 use_layer_normalization: bool, dropout: float):
+                 use_layer_normalization: bool, dropout: float, logger):
         """
         Parameters
         ----------
@@ -54,11 +54,11 @@ class StackedRNN(ModelAbstract):
                              "representing the probability of an element "
                              "being zeroed")
         if dropout > 0 and len(layer_sizes) == 1:
-            self.log.warning("dropout option adds dropout after all but last "
-                             "recurrent layer, so non-zero dropout expects "
-                             "num_layers greater than 1, but got dropout={} "
-                             "and  len(layer_sizes)={}"
-                             .format(dropout, len(layer_sizes)))
+            logging.warning("dropout option adds dropout after all but last "
+                            "recurrent layer, so non-zero dropout expects "
+                            "num_layers greater than 1, but got dropout={} "
+                            "and  len(layer_sizes)={}"
+                            .format(dropout, len(layer_sizes)))
         super().__init__()
 
         self.rnn_torch_key = rnn_torch_key
@@ -75,6 +75,9 @@ class StackedRNN(ModelAbstract):
         else:
             self.dropout_module = None
         self.relu_sublayer = torch.nn.ReLU()
+
+        # Creating a logger like in main model
+        self.logger = logger
 
         # Initialize model
         rnn_cls = keys_to_rnn_class[self.rnn_torch_key]
@@ -105,6 +108,11 @@ class StackedRNN(ModelAbstract):
 
     @property
     def params(self):
+        """All parameters necessary to create again the same model. Will be
+        used in the trainer, when saving the checkpoint state. Params here
+        will be used to re-create the model when starting an experiment from
+        checkpoint. You should be able to re-create an instance of your
+        model with those params."""
         params = {
             'rnn_torch_key': self.rnn_torch_key,
             'input_size': self.input_size,
@@ -168,12 +176,12 @@ class StackedRNN(ModelAbstract):
         last_output = inputs
         for i, (layer_i, states_i) in enumerate(zip(self.rnn_layers,
                                                     hidden_states)):
-            self.log.debug('Applying StackedRnn layer #{}\n'
-                           '    Layer is: {}\n'
-                           '    Received input size: {}.'
-                           .format(i, layer_i,
-                                   [last_output.data.shape if was_packed else
-                                    last_output.shape]))
+            self.logger.debug(
+                'Applying StackedRnn layer #{}\n'
+                '    Layer is: {}\n'
+                '    Received input size: {}.'
+                .format(i, layer_i, [last_output.data.shape if was_packed else
+                                     last_output.shape]))
 
             # Apply main sub-layer: either as 3D tensor or as packedSequence
             last_output, new_state_i = layer_i(last_output, states_i)
@@ -184,27 +192,27 @@ class StackedRNN(ModelAbstract):
             if was_packed:
                 last_output = last_output.data
 
-            self.log.debug('   Output size after main sub-layer: {}'
-                           .format(last_output.shape))
+            self.logger.debug('   Output size after main sub-layer: {}'
+                              .format(last_output.shape))
 
             # Apply layer normalization
             if self.use_layer_normalization:
                 last_output = self.layer_norm_layers[i](last_output)
 
-            self.log.debug('   Output size after normalization: {}'
-                           .format(last_output.shape))
+            self.logger.debug('   Output size after normalization: {}'
+                              .format(last_output.shape))
 
             if i < len(self.rnn_layers) - 1:
                 # Apply dropout except on last layer
                 if self.dropout > 0:
                     last_output = self.dropout_module(last_output)
-                    self.log.debug('   Output size after dropout: {}'
-                                   .format(last_output.shape))
+                    self.logger.debug('   Output size after dropout: {}'
+                                      .format(last_output.shape))
 
                 # Apply ReLu activation except on last layer
                 last_output = self.relu_sublayer(last_output)
-                self.log.debug('   Output size after reLu: {}'
-                               .format(last_output.shape))
+                self.logger.debug('   Output size after reLu: {}'
+                                  .format(last_output.shape))
 
             # Saving layer's last_output and states for later
             outputs.append(last_output)
@@ -216,8 +224,8 @@ class StackedRNN(ModelAbstract):
                 # Skip connection for last layer is different and will be done
                 # outside the loop.
                 last_output = torch.cat((last_output, inputs_tensor), dim=-1)
-                self.log.debug('   Output size after skip connection: {}'
-                               .format(last_output.shape))
+                self.logger.debug('   Output size after skip connection: {}'
+                                  .format(last_output.shape))
 
             # Packing. Either for use on next layer or for returning a packed
             # sequence.
@@ -240,10 +248,11 @@ class StackedRNN(ModelAbstract):
             else:
                 last_output = torch.cat(outputs, dim=-1)
 
-            self.log.debug('Final skip connection: concatenating all outputs '
-                           'but not input: {} = {}'
-                           .format([outputs[i].shape for i in
-                                    range(len(outputs))],
-                                   [last_output.data.shape if was_packed else
-                                    last_output.shape]))
+            self.logger.debug(
+                'Final skip connection: concatenating all outputs '
+                'but not input: {} = {}'
+                    .format([outputs[i].shape for i in
+                             range(len(outputs))],
+                            [last_output.data.shape if was_packed else
+                             last_output.shape]))
         return last_output, tuple(out_hidden_states)

@@ -13,11 +13,12 @@ from torch.utils.data.dataloader import DataLoader
 
 from dwi_ml.experiment.learning_utils import compute_gradient_norm
 from dwi_ml.experiment.memory import log_gpu_memory_usage
-from dwi_ml.experiment.batch_samplers import (
-    BatchStreamlinesSamplerWithInputs as BatchSampler)
+from dwi_ml.training.batch_samplers import (
+    BatchStreamlinesSamplerOneInputAndPD as BatchSampler)
 from dwi_ml.training.trainers import DWIMLTrainer
 
 from Learn2Track.models.learn2track_model import Learn2TrackModel
+
 VERSION = 0
 
 
@@ -147,7 +148,7 @@ class Learn2TrackTrainer(DWIMLTrainer):
                 # Data interpolation has not been done yet. GPU computations
                 # need to be done here in the main thread. Running final steps
                 # of data preparation.
-                self.log.debug('Finalizing input data preparation on GPU)')
+                self.logger.debug('Finalizing input data preparation on GPU.')
                 batch_streamlines, final_s_ids_per_subj = data
 
                 # Concerning the streamlines: directions not computed yet
@@ -201,7 +202,7 @@ class Learn2TrackTrainer(DWIMLTrainer):
                 # to-call-zero-grad-in-pytorch
                 self.optimizer.zero_grad()
 
-            self.log.debug('\n=== Computing forward propagation! ===\n')
+            self.logger.debug('\n=== Computing forward propagation! ===')
             try:
                 # Apply model. This calls our model's forward function
                 # (the hidden states are not used here, neither as input nor
@@ -218,13 +219,13 @@ class Learn2TrackTrainer(DWIMLTrainer):
                 model_outputs, _ = self.model(batch_inputs, batch_prev_dirs)
 
             # Compute loss
-            self.log.debug('\n=== Computing loss ===\n')
+            self.logger.debug('\n=== Computing loss ===')
             mean_loss = self.model.compute_loss(model_outputs,
                                                 batch_directions.data)
-            self.log.info("Loss is : {}".format(mean_loss))
+            self.logger.info("Loss is : {}".format(mean_loss))
 
             if is_training:
-                self.log.debug('\n=== Computing back propagation ===\n')
+                self.logger.debug('\n=== Computing back propagation ===')
 
                 # Explanation on the backward here:
                 # - Each parameter in the RNN and other sub-networks have been
@@ -237,7 +238,7 @@ class Learn2TrackTrainer(DWIMLTrainer):
                 # - When calling backward, the backward of each sub-function is
                 #   called iteratively, each time computing the partial
                 #   derivative dloss/dw and modifying the parameters' .grad
-                #   ==> model_outputs.grad_fn shows the last used fonction,
+                #   ==> model_outputs.grad_fn shows the last used function,
                 #       and thus the first backward to be used, here:
                 #       MeanBackward0  (last function was a mean)
                 #   ==> model_outputs.grad_fn shows that the last used fct
@@ -247,15 +248,15 @@ class Learn2TrackTrainer(DWIMLTrainer):
                 # Clip gradient if necessary before updating parameters
                 # Remembering unclipped value.
                 grad_norm = compute_gradient_norm(self.model.parameters())
-                self.log.debug("Gradient norm: {}".format(grad_norm))
+                self.logger.debug("Gradient norm: {}".format(grad_norm))
                 if self.clip_grad:
                     # self.grad_norm_monitor.update(grad_norm)
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(),
                                                    self.clip_grad)
                     grad_norm = compute_gradient_norm(self.model.parameters())
-                    self.log.debug("Gradient norm when gradients are clipped "
-                                   "is {}"
-                                   .format(grad_norm))
+                    self.logger.debug(
+                        "Gradient norm when gradients are clipped is {}"
+                        .format(grad_norm))
 
                 # Update parameters
                 self.optimizer.step()
@@ -263,7 +264,7 @@ class Learn2TrackTrainer(DWIMLTrainer):
                 grad_norm = None
 
             if self.use_gpu:
-                log_gpu_memory_usage()
+                log_gpu_memory_usage(self.logger)
 
         return mean_loss.cpu().item(), grad_norm
 
@@ -327,7 +328,7 @@ class Learn2TrackTrainer(DWIMLTrainer):
         # Note that using this does not really work the same way as during
         # training. The __iter__ function of the batch sampler is called
         # 5 times, instead of "yielding" 5 times. So the whole memory of
-        # streamlines and subjects that have already been used is resetted
+        # streamlines and subjects that have already been used is resettled
         # each time, and there is a possibility that the same streamlines will
         # be sampled more than once. But this is just for stats so ok.
         logging.info("Running the dataloader for 5 iterations, just to "
