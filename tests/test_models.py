@@ -5,9 +5,6 @@ import numpy as np
 import torch
 from torch.nn.utils.rnn import pack_sequence, PackedSequence
 
-from dwi_ml.data.packed_sequences import (unpack_sequence,
-                                          unpack_tensor_from_indices)
-from dwi_ml.models.direction_getter_models import keys_to_direction_getters
 from dwi_ml.models.embeddings_on_packed_sequences import keys_to_embeddings
 
 from Learn2Track.models.learn2track_model import Learn2TrackModel
@@ -73,23 +70,9 @@ def create_batch():
     return batch_x_data, batch_directions, previous_dirs, nb_prev_dirs
 
 
-def test_packing(streamlines):
-    print("Input before packing: {}".format(streamlines))
-    packed_sequence = pack_sequence(streamlines, enforce_sorted=False)
-    inputs_tensor = packed_sequence.data
-    print("Packed: {}".format(inputs_tensor))
-
-    # Unpacking technique 1
-    result = unpack_sequence(packed_sequence)
-    print("Unpacked technique 1: {}".format(result))
-
-    # Unpacking technique 2
-    indices = unpack_sequence(packed_sequence, get_indices_only=True)
-    result = unpack_tensor_from_indices(inputs_tensor, indices)
-    print("Unpacked technique 2: {}".format(result))
-
-
 def test_prev_dir_embedding(prev_directions, nb_prev_dirs):
+
+    print("\nInput is: {}".format(prev_directions))
 
     print('\nTesting identity embedding...')
     cls = keys_to_embeddings['no_embedding']
@@ -117,7 +100,7 @@ def test_stacked_rnn(inputs):
     model = StackedRNN('lstm', input_size, [5, 7],
                        use_skip_connections=True,
                        use_layer_normalization=True,
-                       dropout=0.4)
+                       dropout=0.4, logger=logging.getLogger())
     print("==> Model's computed output size should be 5+7=12: {}"
           .format(model.output_size))
 
@@ -129,16 +112,17 @@ def test_stacked_rnn(inputs):
     return model
 
 
-def test_learn2track(model_prev_dirs, inputs, prev_dirs):
+def test_learn2track(model_prev_dirs, inputs, prev_dirs, nb_previous_dirs):
 
     print('Using same prev dirs embeding model as previous test.')
 
     print('\nPreparing model...')
-    input_size=4
+    input_size = 4
     prev_dir_embedding_size = model_prev_dirs.output_size
 
-    model = Learn2TrackModel(nb_previous_dirs, prev_dir_embedding_size,
-                             'nn_embedding', input_size, 'nn_embedding', 1,
+    model = Learn2TrackModel('test', nb_previous_dirs, prev_dir_embedding_size,
+                             'nn_embedding', input_size, 'input',
+                             'grid', 1, 'nn_embedding', 1,
                              'lstm', [10, 12], use_skip_connection=True,
                              use_layer_normalization=True, dropout=0.5,
                              direction_getter_key='cosine-regression')
@@ -162,17 +146,11 @@ def test_loss_functions(model: Learn2TrackModel, output, target_directions):
               "You need to pack and use .data.")
 
 
-if __name__ == '__main__':
-
+def main():
     logging.basicConfig(level='INFO')
 
     (fake_input, fake_directions, fake_prev_dirs,
      nb_previous_dirs) = create_batch()
-
-    print('****************************\n'
-          'Testing packing and unpacking\n'
-          '****************************\n')
-    test_packing(fake_prev_dirs)
 
     # Preparing packed sequence data for the model
     # Hide the following lines to test on a list of tensors instead.
@@ -197,9 +175,13 @@ if __name__ == '__main__':
           '****************************\n')
     (learn2track_model,
      out_directions) = test_learn2track(model_prev_dir, fake_input,
-                                        fake_prev_dirs)
+                                        fake_prev_dirs, nb_previous_dirs)
 
     print('\n****************************\n'
           'Testing loss function\n'
           '****************************\n')
     test_loss_functions(learn2track_model, out_directions, fake_directions)
+
+
+if __name__ == '__main__':
+    main()
