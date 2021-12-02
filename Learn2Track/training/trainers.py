@@ -11,11 +11,11 @@ import torch
 from torch.nn.utils.rnn import PackedSequence, pack_sequence
 from torch.utils.data.dataloader import DataLoader
 
-from dwi_ml.experiment.learning_utils import compute_gradient_norm
-from dwi_ml.experiment.memory import log_gpu_memory_usage
+from dwi_ml.experiment_utils.learning_utils import compute_gradient_norm
+from dwi_ml.experiment_utils.memory import log_gpu_memory_usage
 from dwi_ml.training.batch_samplers import (
-    BatchStreamlinesSamplerOneInputAndPD as BatchSampler)
-from dwi_ml.training.trainers import DWIMLTrainer
+    BatchStreamlinesSamplerOneInput as BatchSampler)
+from dwi_ml.training.trainer import DWIMLTrainer
 
 from Learn2Track.models.learn2track_model import Learn2TrackModel
 

@@ -4,7 +4,7 @@ from typing import List
 
 """ Various arg_parser equivalents."""
 
-from dwi_ml.training.checks_for_training_parameters import (
+from dwi_ml.experiment_utils.checks_for_training_parameters import (
     check_bool_instance_not_none, check_float_or_none_instance,
     check_int_or_none_instance, check_str_or_none_instance,
     check_all_experiment_parameters as dwi_ml_checks)
@@ -109,6 +109,9 @@ def check_all_experiment_parameters(conf: dict):
         conf['model']['rnn']['use_skip_connection'],
         conf['model']['rnn']['use_layer_normalization'])
     model_params.update({
+        'nb_previous_dirs': check_int_or_none_instance(
+            conf['model']['previous_dirs']['nb_previous_dirs'],
+            'nb_previous_dirs', fix_none=0),
         'prev_dirs_embedding_key': pdek,
         'prev_dirs_embedding_size': pdes,
         'input_embedding_key': check_inputs_embedding(

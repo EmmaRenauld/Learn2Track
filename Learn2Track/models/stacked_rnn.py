@@ -3,7 +3,7 @@ import logging
 from typing import List, Tuple, Union
 
 import torch
-from dwi_ml.utils import TqdmLoggingHandler
+from dwi_ml.experiment_utils.prints import TqdmLoggingHandler
 from torch import Tensor
 from torch.nn.utils.rnn import PackedSequence
 

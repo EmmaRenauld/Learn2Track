@@ -1,19 +1,21 @@
 # -*- coding: utf-8 -*-
 import logging
-from typing import Any, Tuple, Union, List, Iterable
+from typing import Any, Tuple, Union, List
 
 import torch
 from torch import Tensor
 from torch.nn.utils.rnn import PackedSequence, pack_sequence
 
+from dwi_ml.experiment_utils.timer import Timer
+from dwi_ml.experiment_utils.prints import format_dict_to_str
 from dwi_ml.models.direction_getter_models import keys_to_direction_getters
 from dwi_ml.models.embeddings_on_tensors import keys_to_embeddings
-from dwi_ml.models.main_models import MainModelAbstractNeighborsPreviousDirs
+from dwi_ml.models.main_models import MainModelAbstract
 
 from Learn2Track.models.stacked_rnn import StackedRNN
 
 
-class Learn2TrackModel(MainModelAbstractNeighborsPreviousDirs):
+class Learn2TrackModel(MainModelAbstract):
     """
     Recurrent tracking model.
 
@@ -27,14 +29,10 @@ class Learn2TrackModel(MainModelAbstractNeighborsPreviousDirs):
     def __init__(self, experiment_name,
                  nb_previous_dirs: int, prev_dirs_embedding_size: int,
                  prev_dirs_embedding_key, nb_features: int,
-                 input_group_name,
-                 neighborhood_type: Union[str, None],
-                 neighborhood_radius: Union[int, float, Iterable[float]],
-                 input_embedding_key,
-                 input_embedding_size_ratio: float, rnn_key: str,
-                 rnn_layer_sizes: List[int], use_skip_connection: bool,
-                 use_layer_normalization: bool, dropout: float,
-                 direction_getter_key, **_):
+                 input_embedding_key, input_embedding_size_ratio: float,
+                 rnn_key: str, rnn_layer_sizes: List[int],
+                 use_skip_connection: bool, use_layer_normalization: bool,
+                 dropout: float, direction_getter_key, **unused_kwargs):
         """
         Params
         ------
@@ -74,9 +72,7 @@ class Learn2TrackModel(MainModelAbstractNeighborsPreviousDirs):
         [1] https://arxiv.org/pdf/1308.0850v5.pdf
         [2] https://arxiv.org/pdf/1607.06450.pdf
         """
-        super().__init__(experiment_name, nb_features, input_group_name,
-                         nb_previous_dirs, neighborhood_type,
-                         neighborhood_radius)
+        super().__init__(experiment_name)
 
         # 0. Verifying keys
         self.prev_dirs_embedding_key = prev_dirs_embedding_key
@@ -89,6 +85,7 @@ class Learn2TrackModel(MainModelAbstractNeighborsPreviousDirs):
             prev_dirs_emb_cls = keys_to_embeddings[prev_dirs_embedding_key]
         else:
             prev_dirs_emb_cls = None
+        self.nb_previous_dirs = nb_previous_dirs
         if self.nb_previous_dirs > 0:
             self.prev_dirs_embedding_size = prev_dirs_embedding_size
             self.prev_dirs_embedding = prev_dirs_emb_cls(
@@ -101,6 +98,7 @@ class Learn2TrackModel(MainModelAbstractNeighborsPreviousDirs):
         # 2. Input embedding
         input_embedding_cls = keys_to_embeddings[input_embedding_key]
         self.input_embedding_size_ratio = input_embedding_size_ratio
+        self.input_size = nb_features
         input_emb_size = int(self.input_size * input_embedding_size_ratio)
         self.input_embedding = input_embedding_cls(
             input_size=self.input_size, output_size=input_emb_size)
@@ -124,6 +122,8 @@ class Learn2TrackModel(MainModelAbstractNeighborsPreviousDirs):
         self.direction_getter = direction_getter_cls(
             self.rnn_model.output_size)
 
+        logging.warning("Unused kwargs: {}".format(unused_kwargs))
+
     @property
     def params_per_layer(self):
         params = {
@@ -146,6 +146,7 @@ class Learn2TrackModel(MainModelAbstractNeighborsPreviousDirs):
         params = super().params
 
         params.update({
+            'nb_previous_dirs': self.nb_previous_dirs,
             'prev_dirs_embedding_size': self.prev_dirs_embedding_size,
             'prev_dirs_embedding_key': self.prev_dirs_embedding_key,
             'input_embedding_key': self.input_embedding_key,
@@ -159,15 +160,6 @@ class Learn2TrackModel(MainModelAbstractNeighborsPreviousDirs):
         })
 
         return params
-
-    @classmethod
-    def init_from_checkpoint(cls, **params):
-        """
-        Params is saved from model.params when the trainer saves the
-        checkpoint.
-        """
-        # Nothing to do, we can call it directly.
-        return cls(**params)
 
     def forward(self, inputs: PackedSequence, prev_dirs: PackedSequence,
                 hidden_states: Any = None) -> Tuple[Any, Any]:
@@ -255,8 +247,7 @@ class Learn2TrackModel(MainModelAbstractNeighborsPreviousDirs):
                 "Previous dir and inputs both seem to be a list of "
                 "tensors, probably one per streamline. Now "
                 "checking that their dimensions fit. Nb inputs: "
-                "{}, Nb prev_dirs: {}"
-                .format(nb_s_input, nb_s_prev_dir))
+                "{}, Nb prev_dirs: {}".format(nb_s_input, nb_s_prev_dir))
             assert nb_s_input == nb_s_prev_dir, \
                 "Both lists do not have the same length (not the same " \
                 "number of streamlines?)"
@@ -325,3 +316,16 @@ class Learn2TrackModel(MainModelAbstractNeighborsPreviousDirs):
         mean_loss = self.direction_getter.compute_loss(outputs, targets)
 
         return mean_loss
+
+
+def prepare_model(args):
+    with Timer("\n\nPreparing model", newline=True, color='yellow'):
+        logging.debug("Nb of features in the data: {}"
+                      .format(args['nb_features']))
+
+        model = Learn2TrackModel(**args)
+        logging.info("Learn2track model user-defined parameters: \n" +
+                     format_dict_to_str(model.params))
+        logging.info("Learn2track model final parameters:" +
+                     format_dict_to_str(model.params_per_layer))
+    return model

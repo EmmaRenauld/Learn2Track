@@ -1,10 +1,6 @@
 """
 Additional parameters for Learn2track as compared to other projects in dwi_ml:
 
-training:
-    clip_grad: bool
-         Clip the gradient norms to avoid exploding gradients.
-
 model:
     previous_dirs:
         nb_previous_dirs: int
