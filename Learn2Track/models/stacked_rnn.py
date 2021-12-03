@@ -180,8 +180,9 @@ class StackedRNN(torch.nn.Module):
                 'Applying StackedRnn layer #{}\n'
                 '    Layer is: {}\n'
                 '    Received input size: {}.'
-                .format(i, layer_i, [last_output.data.shape if was_packed else
-                                     last_output.shape]))
+                    .format(i, layer_i,
+                            [last_output.data.shape if was_packed else
+                             last_output.shape]))
 
             # Apply main sub-layer: either as 3D tensor or as packedSequence
             last_output, new_state_i = layer_i(last_output, states_i)
@@ -251,8 +252,8 @@ class StackedRNN(torch.nn.Module):
             self.logger.debug(
                 'Final skip connection: concatenating all outputs '
                 'but not input: {} = {}'
-                    .format([outputs[i].shape for i in
-                             range(len(outputs))],
-                            [last_output.data.shape if was_packed else
-                             last_output.shape]))
+                .format([outputs[i].shape for i in
+                         range(len(outputs))],
+                        [last_output.data.shape if was_packed else
+                         last_output.shape]))
         return last_output, tuple(out_hidden_states)

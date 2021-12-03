@@ -13,27 +13,38 @@ from os import path
 
 from scilpy.io.utils import assert_inputs_exist, assert_outputs_exist
 
-from dwi_ml.batch_samplers.utils import (add_args_batch_sampler,
-                                         prepare_batchsampleroneinput)
-from dwi_ml.data.dataset.utils import (add_args_dataset,
-                                       prepare_multisubjectdataset)
-from dwi_ml.experiment_utils.timer import Timer
-from dwi_ml.training.utils import add_training_args, run_experiment
+from dwi_ml.data_loaders.utils import (
+    add_args_batch_sampler, add_input_args_batch_sampler,
+    prepare_batchsamplers_oneinput)
+from dwi_ml.data.dataset.utils import (
+    add_args_dataset, prepare_multisubjectdataset)
+from dwi_ml.training.utils import run_experiment
 
-from Learn2Track.models.learn2track_model import prepare_model
+from Learn2Track.models.utils import add_model_args, prepare_model
+from Learn2Track.training.utils import add_training_args, prepare_trainer
 
 
 def prepare_arg_parser():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawTextHelpFormatter)
     p.add_argument(
-        'experiment_path', default='./', metavar='p',
+        'experiment_path',
         help='Path where to save your experiment. \nComplete path will be '
-             'experiment_path/experiment_name. Default: ./')
+             'experiment_path/experiment_name.')
     p.add_argument(
-        'experiment_name', metavar='n',
+        'experiment_name',
         help='If given, name for the experiment. Else, model will decide the '
              'name to \ngive based on time of day.')
+    p.add_argument(
+        'hdf5_file',
+        help='Path to the .hdf5 dataset. Should contain both your training '
+             'and \nvalidation subjects.')
+    p.add_argument(
+        'input_group_name',
+        help='Name of the input volume in the hdf5 dataset.')
+    p.add_argument(
+        'streamline_group_name',
+        help="Name of the streamlines group in the hdf5 dataset.")
 
     p.add_argument(
         '--logging', dest='logging_choice',
@@ -42,67 +53,81 @@ def prepare_arg_parser():
              "options are two equivalents of 'debug' level. \nWith "
              "'as_much_as_possible', we print the debug level only when the "
              "final \nresult is still readable (even during parallel training "
-             "and during tqdm loop). \n'debug' prints everything always, even "
+             "and during tqdm \nloop). 'debug' prints everything always, even "
              "if ugly.")
+    p.add_argument(
+        '--taskman_managed', action='store_true',
+        help="If set, instead of printing progression, print taskman-relevant "
+             "data.")
+
+    # Memory options both for the batch sampler and the trainer:
+    m_g = p.add_argument_group("Memory options :")
+    m_g.add_argument(
+        '--use_gpu', action='store_true',
+        help="If set, avoids computing and interpolating the inputs (and "
+             "their neighborhood) \ndirectly in the batch sampler (which is "
+             "computed on CPU). Will be computed later on GPU, \nin the "
+             "trainer.")
+    m_g.add_argument(
+        '--processes', type=int, default=1,
+        help="Number of parallel CPU processes, when working on CPU.")
+    m_g.add_argument(
+        '--rng', type=int, default=1234,
+        help="Random seed. Default=1234.")
 
     add_args_dataset(p)
+    add_model_args(p)
+    # For the abstract batch sampler class:
     add_args_batch_sampler(p)
+    # For the batch sampler sub-class with inputs:
+    add_input_args_batch_sampler(p)
     add_training_args(p)
 
     return p
 
 
-def add_project_specific_args(p):
-    p.add_argument('--input_group', metavar='i',
-                   help='Name of the input group. \n'
-                        '**If a checkpoint exists, this information is '
-                        'already contained in the \ncheckpoint and is not '
-                        'necessary. Else, mandatory.')
-    p.add_argument('--target_group', metavar='t',
-                   help='Name of the target streamline group. \n'
-                        '**If a checkpoint exists, this information is '
-                        'already contained in the \ncheckpoint and is not '
-                        'necessary. Else, mandatory.')
-
-
 def init_from_args(p, args):
-    # Check that all files exist
-    assert_inputs_exist(p, [args.hdf5_file, args.yaml_parameters])
-    assert_outputs_exist(p, args, args.experiment_path)
 
     # Prepare the dataset
     dataset = prepare_multisubjectdataset(args)
 
-    # Preparing the model
-    input_group_idx = dataset.volume_groups.index(args.input_group)
-    nb_features = dataset.nb_features[input_group_idx]
-    model_params['input_group_idx'] = input_group_idx
-    model_params['nb_features'] = nb_features
-    model_params['experiment_name'] = args.experiment_name
-    model = prepare_model(model_params)
-
     # Preparing the batch samplers
-    with Timer("\nPreparing batch samplers...", newline=True, color='green'):
-        logging.info("Training batch sampler...")
-        training_batch_sampler = prepare_batchsampleroneinput(
-            dataset.training_set, args)
+    if args.grid_radius:
+        args.neighborhood_radius = args.grid_radius
+        args.neighborhood_type = 'grid'
+    elif args.sphere_radius:
+        args.neighborhood_radius = args.sphere_radius
+        args.neighborhood_type = 'axes'
+    else:
+        args.neighborhood_radius = None
+        args.neighborhood_type = None
+    args.wait_for_gpu = args.use_gpu
+    training_batch_sampler, validation_batch_sampler = \
+        prepare_batchsamplers_oneinput(dataset, args, args)
 
-        if dataset.validation_set.nb_subjects > 0:
-            logging.info("Validation batch sampler...")
-            validation_batch_sampler = prepare_batchsampleroneinput(
-                dataset.training_set, args)
+    # Preparing the model
+    input_group_idx = dataset.volume_groups.index(args.input_group_name)
+    nb_features = dataset.nb_features[input_group_idx]
+    if training_batch_sampler.neighborhood_points:
+        nb_neighbors = len(training_batch_sampler.neighborhood_points)
+    else:
+        nb_neighbors = 0
 
-        else:
-            validation_batch_sampler = None
+    print("\nInput size = {} features * ({} neighbors + 1)"
+          .format(nb_features, nb_neighbors))
 
+    input_size = nb_features * (nb_neighbors + 1)
+    model = prepare_model(args, input_size)
 
+    # Preparing the trainer
+    trainer = prepare_trainer(training_batch_sampler, validation_batch_sampler,
+                              model, args)
 
     return trainer
 
 
 def main():
     p = prepare_arg_parser()
-    add_project_specific_args(p)
     args = p.parse_args()
 
     # Initialize logger for preparation (loading data, model, experiment)
@@ -113,11 +138,15 @@ def main():
         logging_level = 'DEBUG'
     logging.basicConfig(level=logging_level)
 
+    # Check that all files exist
+    assert_inputs_exist(p, [args.hdf5_file])
+    assert_outputs_exist(p, args, args.experiment_path)
+
     # Verify if a checkpoint has been saved. Else create an experiment.
     if path.exists(os.path.join(args.experiment_path, args.experiment_name,
                                 "checkpoint")):
         raise FileExistsError("This experiment already exists. Delete or use "
-                              "script resume_experiment.py.")
+                              "script resume_training_from_checkpoint.py.")
 
     trainer = init_from_args(p, args)
 

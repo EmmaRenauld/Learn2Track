@@ -3,11 +3,11 @@ import logging
 from typing import Any, Tuple, Union, List
 
 import torch
+from dwi_ml.data.processing.streamlines.post_processing import \
+    compute_and_normalize_directions, compute_n_previous_dirs
 from torch import Tensor
 from torch.nn.utils.rnn import PackedSequence, pack_sequence
 
-from dwi_ml.experiment_utils.timer import Timer
-from dwi_ml.experiment_utils.prints import format_dict_to_str
 from dwi_ml.models.direction_getter_models import keys_to_direction_getters
 from dwi_ml.models.embeddings_on_tensors import keys_to_embeddings
 from dwi_ml.models.main_models import MainModelAbstract
@@ -28,11 +28,12 @@ class Learn2TrackModel(MainModelAbstract):
 
     def __init__(self, experiment_name,
                  nb_previous_dirs: int, prev_dirs_embedding_size: int,
-                 prev_dirs_embedding_key, nb_features: int,
-                 input_embedding_key, input_embedding_size_ratio: float,
+                 prev_dirs_embedding_key: str, nb_features: int,
+                 input_embedding_key: str, input_embedding_size: int,
                  rnn_key: str, rnn_layer_sizes: List[int],
                  use_skip_connection: bool, use_layer_normalization: bool,
-                 dropout: float, direction_getter_key, **unused_kwargs):
+                 dropout: float, direction_getter_key,
+                 normalize_directions: bool):
         """
         Params
         ------
@@ -51,10 +52,8 @@ class Learn2TrackModel(MainModelAbstract):
         input_embedding_key: str
             Key to a embedding class (one of
             dwi_ml.models.embeddings_on_tensors.keys_to_embeddings)
-        input_embedding_size_ratio: float
-            Considering as the input size is not known beforehand, not asking
-            user for the embedding size but rather for a ratio. Ex: 0.5 means
-            the embedding size will be half the input size.
+        input_embedding_size: int
+            Output embedding size for the input.
         rnn_key: either 'LSTM' or 'GRU'
         rnn_layer_sizes: List[int]
             The list of layer sizes for the rnn. The real size will depend
@@ -73,6 +72,8 @@ class Learn2TrackModel(MainModelAbstract):
         [2] https://arxiv.org/pdf/1607.06450.pdf
         """
         super().__init__(experiment_name)
+
+        self.normalize_directions = normalize_directions
 
         # 0. Verifying keys
         self.prev_dirs_embedding_key = prev_dirs_embedding_key
@@ -97,14 +98,14 @@ class Learn2TrackModel(MainModelAbstract):
 
         # 2. Input embedding
         input_embedding_cls = keys_to_embeddings[input_embedding_key]
-        self.input_embedding_size_ratio = input_embedding_size_ratio
+        self.input_embedding_size = input_embedding_size
         self.input_size = nb_features
-        input_emb_size = int(self.input_size * input_embedding_size_ratio)
         self.input_embedding = input_embedding_cls(
-            input_size=self.input_size, output_size=input_emb_size)
+            input_size=self.input_size,
+            output_size=input_embedding_size)
 
         # 3. Stacked RNN
-        rnn_input_size = self.prev_dirs_embedding_size + input_emb_size
+        rnn_input_size = self.prev_dirs_embedding_size + input_embedding_size
         self.use_skip_connection = use_skip_connection
         self.use_layer_normalization = use_layer_normalization
         self.rnn_key = rnn_key
@@ -122,16 +123,12 @@ class Learn2TrackModel(MainModelAbstract):
         self.direction_getter = direction_getter_cls(
             self.rnn_model.output_size)
 
-        logging.warning("Unused kwargs: {}".format(unused_kwargs))
-
     @property
     def params_per_layer(self):
         params = {
             'prev_dirs_embedding':
                 self.prev_dirs_embedding.params if
                 self.prev_dirs_embedding else None,
-            # This should contain the input size:
-            'input_embedding_size_ratio': self.input_embedding_size_ratio,
             'input_embedding': self.input_embedding.params,
             'rnn_model': self.rnn_model.params,
             'direction_getter': self.direction_getter.params
@@ -149,17 +146,61 @@ class Learn2TrackModel(MainModelAbstract):
             'nb_previous_dirs': self.nb_previous_dirs,
             'prev_dirs_embedding_size': self.prev_dirs_embedding_size,
             'prev_dirs_embedding_key': self.prev_dirs_embedding_key,
+            'input_size': int(self.input_size),
             'input_embedding_key': self.input_embedding_key,
-            'input_embedding_size_ratio': self.input_embedding_size_ratio,
+            'input_embedding_size': int(self.input_embedding_size),
             'rnn_key': self.rnn_key,
             'rnn_layer_sizes': self.rnn_layer_sizes,
             'use_skip_connection': self.use_skip_connection,
             'use_layer_normalization': self.use_layer_normalization,
             'dropout': self.dropout,
-            'direction_getter_key': self.direction_getter_key
+            'direction_getter_key': self.direction_getter_key,
+            'normalize_directions': self.normalize_directions
         })
 
         return params
+
+    @staticmethod
+    def prepare_inputs(inputs):
+        """
+        Inputs should be already prepared by the batch sampler (meaning the
+        neighborhood is added) because it needs to interpolate data from the
+        volumes. Only needs to be packed.
+        """
+        packed_inputs = pack_sequence(inputs, enforce_sorted=False)
+        return packed_inputs
+
+    def prepare_targets(self, streamlines, device):
+        """
+        Targets are the next direction at each point (packedSequence)
+        """
+        directions = compute_and_normalize_directions(
+            streamlines, device, self.normalize_directions)
+        packed_directions = pack_sequence(directions, enforce_sorted=False)
+        return directions, packed_directions
+
+    def prepare_previous_dirs(self, directions, device):
+        """
+        Preparing the n_previous_dirs for each point (when they don't exist,
+        use zeros).
+        The method returns a value for each of the n points of the streamline,
+        (thus one more points than the number of directions). Here we do not
+        use the last point as it does not have an associated target.
+        Packing.
+        """
+        if self.nb_previous_dirs == 0:
+            return None
+
+        _n_previous_dirs = compute_n_previous_dirs(
+            directions, self.nb_previous_dirs, device=device)
+
+        # Not keeping the last point
+        n_previous_dirs = [s[:-1] for s in _n_previous_dirs]
+
+        # Packing.
+        n_previous_dirs = pack_sequence(n_previous_dirs, enforce_sorted=False)
+
+        return n_previous_dirs
 
     def forward(self, inputs: PackedSequence, prev_dirs: PackedSequence,
                 hidden_states: Any = None) -> Tuple[Any, Any]:
@@ -189,7 +230,7 @@ class Learn2TrackModel(MainModelAbstract):
 
         # Previous dirs embedding, input_dirs embedding
         self.logger.debug("================ 1. Previous dir embedding, if any "
-                          "(on tensor)...")
+                          "(on packed_sequence's tensor!)...")
         if prev_dirs is not None:
             self.logger.debug(
                 "Input size: {}".format(prev_dirs.data.shape[-1]))
@@ -197,7 +238,8 @@ class Learn2TrackModel(MainModelAbstract):
             self.logger.debug("Output size: {}".format(prev_dirs.shape[-1]))
 
         self.logger.debug(
-            "================ 2. Inputs embedding (on tensor)...")
+            "================ 2. Inputs embedding (on "
+            "packed_sequence's tensor!)...")
         self.logger.debug("Input size: {}".format(inputs.data.shape[-1]))
         inputs = self.input_embedding(inputs.data)
         self.logger.debug("Output size: {}".format(inputs.shape[-1]))
@@ -316,16 +358,3 @@ class Learn2TrackModel(MainModelAbstract):
         mean_loss = self.direction_getter.compute_loss(outputs, targets)
 
         return mean_loss
-
-
-def prepare_model(args):
-    with Timer("\n\nPreparing model", newline=True, color='yellow'):
-        logging.debug("Nb of features in the data: {}"
-                      .format(args['nb_features']))
-
-        model = Learn2TrackModel(**args)
-        logging.info("Learn2track model user-defined parameters: \n" +
-                     format_dict_to_str(model.params))
-        logging.info("Learn2track model final parameters:" +
-                     format_dict_to_str(model.params_per_layer))
-    return model

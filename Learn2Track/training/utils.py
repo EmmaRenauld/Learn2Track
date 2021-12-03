@@ -32,6 +32,8 @@ def prepare_trainer(training_batch_sampler, validation_batch_sampler, model,
             weight_decay=args.weight_decay, clip_grad=args.clip_grad,
             # MEMORY
             # toDo
-            nb_cpu_workers=args.nb_cpu_workers,
-            taskman_managed=args.taskman_managed, use_gpu=args.use_gpu,)
+            nb_cpu_processes=args.processes,
+            taskman_managed=args.taskman_managed, use_gpu=args.use_gpu)
         logging.info("Trainer params : " + format_dict_to_str(trainer.params))
+
+    return trainer

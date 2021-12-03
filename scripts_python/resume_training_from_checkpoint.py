@@ -5,15 +5,13 @@ import logging
 import os
 from os import path
 
-from dwi_ml.data.dataset.multi_subject_containers import \
-    prepare_multisubjectdataset
+from dwi_ml.data.dataset.utils import prepare_multisubjectdataset
 from dwi_ml.experiment_utils.timer import Timer
-from dwi_ml.batch_samplers.utils import add_args_batch_sampler, \
-    prepare_batchsampleroneinput
-from dwi_ml.training.utils import add_comet_args, run_experiment
+from dwi_ml.data_loaders.utils import prepare_batchsamplers_oneinput
+from dwi_ml.training.utils import run_experiment
 
 from Learn2Track.training.trainers import Learn2TrackTrainer
-from Learn2Track.models.learn2track_model import prepare_model
+from Learn2Track.models.utils import prepare_model
 
 
 def prepare_arg_parser():
@@ -25,15 +23,17 @@ def prepare_arg_parser():
     p.add_argument('experiment_name', metavar='n',
                    help='If given, name for the experiment. Else, model will '
                         'decide the name to \ngive based on time of day.')
-    p.add_argument('--new_checkpoint_patience', type=int, metavar='new_p',
+
+    p.add_argument('--new_patience', type=int, metavar='new_p',
                    help='If a checkpoint exists, patience can be increased '
                         'to allow experiment \nto continue if the allowed '
                         'number of bad epochs has been previously reached.')
-    p.add_argument('--new_checkpoint_max_epochs', type=int,
+    p.add_argument('--new_max_epochs', type=int,
                    metavar='new_max',
                    help='If a checkpoint exists, max_epochs can be increased '
                         'to allow experiment \nto continue if the allowed '
                         'number of epochs has been previously reached.')
+
     p.add_argument('--logging', dest='logging_choice',
                    choices=['error', 'warning', 'info', 'as_much_as_possible',
                             'debug'],
@@ -44,8 +44,6 @@ def prepare_arg_parser():
                         "readable (even during parallel training and during "
                         "tqdm loop). 'debug' print everything always, "
                         "even if ugly.")
-    add_comet_args(p)
-    add_args_batch_sampler(p)
 
     return p
 
@@ -58,38 +56,31 @@ def init_from_checkpoint(args):
 
     # Stop now if early stopping was triggered.
     Learn2TrackTrainer.check_stopping_cause(
-        checkpoint_state, args.override_checkpoint_patience,
-        args.override_checkpoint_max_epochs)
+        checkpoint_state, args.new_patience, args.new_max_epochs)
 
     # Prepare data
-    dataset = prepare_multisubjectdataset(
-        checkpoint_state['train_data_params'])
+    args_data = argparse.Namespace(**checkpoint_state['train_data_params'])
+    dataset = prepare_multisubjectdataset(args_data)
     # toDo Verify that valid dataset is the same.
     #  checkpoint_state['valid_data_params']
 
     # Prepare model
-    model = prepare_model(checkpoint_state['model_params'])
+    input_size = checkpoint_state['model_params']['input_size']
+    args_model = argparse.Namespace(**checkpoint_state['model_params'])
+    model = prepare_model(args_model, input_size)
 
     # Prepare batch samplers
-    with Timer("\nPreparing batch samplers...", newline=True, color='green'):
-        logging.info("Training batch sampler...")
-        training_batch_sampler = prepare_batchsampleroneinput(
-            dataset.training_set, checkpoint_state['train_sampler_params'])
-
-        if dataset.validation_set.nb_subjects > 0:
-            logging.info("Validation batch sampler...")
-            validation_batch_sampler = prepare_batchsampleroneinput(
-                dataset.training_set, checkpoint_state['valid_sampler_params'])
-        else:
-            validation_batch_sampler = None
+    args_tr_s = argparse.Namespace(**checkpoint_state['train_sampler_params'])
+    args_va_s = None if checkpoint_state['valid_sampler_params'] is None else \
+        argparse.Namespace(**checkpoint_state['valid_sampler_params'])
+    training_batch_sampler, validation_batch_sampler = \
+        prepare_batchsamplers_oneinput(dataset, args_tr_s, args_va_s)
 
     # Instantiate trainer
     with Timer("\n\nPreparing trainer", newline=True, color='red'):
         trainer = Learn2TrackTrainer.init_from_checkpoint(
             training_batch_sampler, validation_batch_sampler,
-            model,
-            checkpoint_state,
-            args.new_checkpoint_patience, args.new_checkpoint_max_epochs)
+            model, checkpoint_state, args.new_patience, args.new_max_epochs)
     return trainer
 
 

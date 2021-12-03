@@ -8,18 +8,18 @@ import logging
 
 import numpy as np
 import torch
+from dwi_ml.data.processing.streamlines.post_processing import \
+    compute_and_normalize_directions
 from torch.nn.utils.rnn import PackedSequence, pack_sequence
 from torch.utils.data.dataloader import DataLoader
 
 from dwi_ml.experiment_utils.learning_utils import compute_gradient_norm
 from dwi_ml.experiment_utils.memory import log_gpu_memory_usage
-from dwi_ml.training.batch_samplers import (
+from dwi_ml.data_loaders.batch_samplers import (
     BatchStreamlinesSamplerOneInput as BatchSampler)
-from dwi_ml.training.trainer import DWIMLTrainer
+from dwi_ml.training.trainers import DWIMLTrainer
 
 from Learn2Track.models.learn2track_model import Learn2TrackModel
-
-VERSION = 0
 
 
 class Learn2TrackTrainer(DWIMLTrainer):
@@ -42,9 +42,9 @@ class Learn2TrackTrainer(DWIMLTrainer):
                  experiment_name: str, learning_rate: float,
                  weight_decay: float, max_epochs: int,
                  max_batches_per_epoch: int, patience: int,
-                 nb_cpu_workers: int, taskman_managed: bool, use_gpu: bool,
+                 nb_cpu_processes: int, taskman_managed: bool, use_gpu: bool,
                  comet_workspace: str, comet_project: str,
-                 from_checkpoint: bool, clip_grad: float, **_):
+                 from_checkpoint: bool, clip_grad: float):
         """ Init trainer
 
         Additionnal values compared to super:
@@ -55,7 +55,7 @@ class Learn2TrackTrainer(DWIMLTrainer):
         super().__init__(batch_sampler_training, batch_sampler_validation,
                          model, experiment_path, experiment_name,
                          learning_rate, weight_decay, max_epochs,
-                         max_batches_per_epoch, patience, nb_cpu_workers,
+                         max_batches_per_epoch, patience, nb_cpu_processes,
                          taskman_managed, use_gpu, comet_workspace,
                          comet_project, from_checkpoint)
 
@@ -65,7 +65,6 @@ class Learn2TrackTrainer(DWIMLTrainer):
     def params(self):
         params = super().params
         params.update({
-            'learn2track_trainer_version': VERSION,
             'clip_grad': self.clip_grad
         })
         return params
@@ -100,19 +99,18 @@ class Learn2TrackTrainer(DWIMLTrainer):
             for batches: (goes in train_one_batch)
                 self.model.run_model_and_compute_loss
 
-        Hint: If your sampler was instantiated with use_gpu, you need to deal
-        with your data accordingly here! Use the sampler's
-        self.load_batch_final_step method.
+        If the sampler was instantiated with wait_for_gpu, then we need to
+        compute the inputs here; not done yet.
 
         Parameters
         ----------
         data : tuple of (List, dict)
             This is the output of the BatchSequencesSampleOneInputVolume's
-            load_batch() function. If use_gpu, data is
-            (batch_streamlines, final_streamline_ids_per_subj).
-            Else, data is (batch_inputs, batch_directions).
+            load_batch() function. If wait_for_gpu, data is
+            (batch_streamlines, final_streamline_ids_per_subj). Else, data is
+            (batch_streamlines, final_streamline_ids_per_subj, inputs)
         batch_sampler: BatchSequencesSamplerOneInputVolume
-            either self.train_batch_sampler or valid_batch_sampler, depending
+            Either self.train_batch_sampler or valid_batch_sampler, depending
             on the case.
         is_training : bool
             If True, record the computation graph and backprop through the
@@ -151,41 +149,24 @@ class Learn2TrackTrainer(DWIMLTrainer):
                 self.logger.debug('Finalizing input data preparation on GPU.')
                 batch_streamlines, final_s_ids_per_subj = data
 
-                # Concerning the streamlines: directions not computed yet
-                batch_directions = \
-                    batch_sampler.compute_and_normalize_directions(
-                        batch_streamlines)
-
-                # Concerning the inputs and previous dirs: they have not been
-                # computed yet.
+                # Getting the inputs points from the volumes. Usually done in
+                # load_batch but we preferred to wait here to have a chance to
+                # run things on GPU.
                 batch_inputs = batch_sampler.compute_inputs(
                     batch_streamlines, final_s_ids_per_subj)
-                batch_prev_dirs = batch_sampler.compute_prev_dirs(
-                    batch_directions)
 
             else:
                 # Data is already ready
-                batch_inputs, batch_directions, batch_prev_dirs = data
+                batch_streamlines, final_s_ids_per_subj, batch_inputs = data
 
-            # Packing data. By now,
-            # - batch_inputs should be a list of tensors of various lengths
-            #   (one per sampled streamline)
-            # - idem for batch_streamlines
-            # - batch_prev_dirs should be a list of tensors, or empty if no
-            #   previous_dirs is used.
-            # toDo Is it faster to loop on tensors and send each to cuda?
-            #  We don't actually need to pack data now because the first step
-            #  of the model will be the embedding, which can be done separately
-            #  But we want to send data to cuda now, and we would need to send
-            #  all tensors from lists separately to cuda.
-            batch_inputs = pack_sequence(batch_inputs, enforce_sorted=False)
-            if len(batch_prev_dirs) > 0:
-                batch_prev_dirs = pack_sequence(batch_prev_dirs,
-                                                enforce_sorted=False)
-            else:
-                batch_prev_dirs = None
-            batch_directions = pack_sequence(batch_directions,
-                                             enforce_sorted=False)
+            # Converting streamlines into a list of directions.
+            # + computing previous dirs
+            # + packing everything
+            batch_inputs = self.model.prepare_inputs(batch_inputs)
+            unpacked_directions, batch_directions = self.model.prepare_targets(
+                batch_streamlines, self.device)
+            batch_prev_dirs = self.model.prepare_previous_dirs(
+                unpacked_directions, self.device)
 
             if self.use_gpu:
                 # Tensors coming from the Dataloader will be on cpu. Sending
@@ -335,7 +316,7 @@ class Learn2TrackTrainer(DWIMLTrainer):
                      "compute statistics..")
         sample_batches = [next(iter(dataloader))[0] for _ in range(5)]
 
-        # Restore RNG states. OK??? Voir avec Philippe
+        # Restore RNG states. toDo OK??? Voir avec Philippe
         batch_sampler.np_rng.set_state(sampler_rng_state_bk)
 
         if batch_sampler.dataset.is_lazy:
