@@ -2,36 +2,28 @@
 import numpy as np
 import torch
 from dwi_ml.data.dataset.single_subject_containers import SubjectDataAbstract
-from dwi_ml.models.main_models import MainModelAbstract, \
-                                      MainModelAbstractNeighborsPreviousDirs
-from dwi_ml.tracking.tracking_field import DWIMLTrackingFieldOneInputAndPD
+from dwi_ml.data_loaders.tracking_field import DWIMLTrackingFieldOneInputAndPD
 from torch.nn.utils.rnn import pack_sequence
+
+from Learn2Track.models.learn2track_model import Learn2TrackModel
 
 
 class RecurrentTrackingField(DWIMLTrackingFieldOneInputAndPD):
     """
     To use a RNN for a generative process, the hidden recurrent states that
     would be passed (ex, h_(t-1), C_(t-1) for LSTM) need to be kept in memory
+    as an additional input.
     """
-    def __init__(self, model: MainModelAbstractNeighborsPreviousDirs,
-                 subj_data: SubjectDataAbstract, input_volume_group: str):
-        """
-        Parameters
-        ----------
-        model: MainModelAbstract
-             A learned model.
-        subj_data: SubjectDataAbstract
-            Either LazySubjectData or SubjectData. An instance of the data for
-            a subject.
-        input_volume_group: str
-            The volume group to use as input in the model.
-        """
-        super().__init__(model, subj_data, input_volume_group)
+    def __init__(self, model: Learn2TrackModel,
+                 subj_data: SubjectDataAbstract, input_volume_group: str,
+                 neighborhood_type, neighborhood_radius):
+        super().__init__(model, subj_data, input_volume_group,
+                         neighborhood_type, neighborhood_radius)
 
     def get_model_outputs_at_pos(self, pos, previous_dirs=None,
                                  hidden_recurrent_state=None):
         """
-        Same as in dwi_ml but model needs to use the hidden recurrent states.
+        Overriding dwi_ml: model needs to use the hidden recurrent states.
 
         Parameters
         ----------

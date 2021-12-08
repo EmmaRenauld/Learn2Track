@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from dwi_ml.tracking.propagator import DWIMLPropagatorOneInputAndPD
 
-from Learn2Track.tracking.tracking_field import RecurrentTrackingField
+from Learn2Track.data_loaders.tracking_field import RecurrentTrackingField
 
 
 class RecurrentPropagator(DWIMLPropagatorOneInputAndPD):

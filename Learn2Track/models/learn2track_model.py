@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 import logging
-from typing import Any, Tuple, Union, List
+from typing import Any, Tuple, Union, List, Iterable
 
 import torch
+
 from dwi_ml.data.processing.streamlines.post_processing import \
     compute_and_normalize_directions, compute_n_previous_dirs
 from torch import Tensor
@@ -10,12 +11,12 @@ from torch.nn.utils.rnn import PackedSequence, pack_sequence
 
 from dwi_ml.models.direction_getter_models import keys_to_direction_getters
 from dwi_ml.models.embeddings_on_tensors import keys_to_embeddings
-from dwi_ml.models.main_models import MainModelAbstract
+from dwi_ml.models.main_models import MainModelWithNeighborhood
 
 from Learn2Track.models.stacked_rnn import StackedRNN
 
 
-class Learn2TrackModel(MainModelAbstract):
+class Learn2TrackModel(MainModelWithNeighborhood):
     """
     Recurrent tracking model.
 
@@ -30,9 +31,12 @@ class Learn2TrackModel(MainModelAbstract):
                  nb_previous_dirs: int, prev_dirs_embedding_size: int,
                  prev_dirs_embedding_key: str, nb_features: int,
                  input_embedding_key: str, input_embedding_size: int,
+                 input_embedding_size_ratio: float,
                  rnn_key: str, rnn_layer_sizes: List[int],
                  use_skip_connection: bool, use_layer_normalization: bool,
                  dropout: float, direction_getter_key,
+                 neighborhood_type: Union[str, None],
+                 neighborhood_radius: Union[int, float, Iterable[float], None],
                  normalize_directions: bool):
         """
         Params
@@ -43,17 +47,23 @@ class Learn2TrackModel(MainModelAbstract):
         prev_dirs_embedding_size: int
             How to transform prev_dir inputs (dimension = 3 * nb_previous_dirs)
             during embedding. Total embedding size will be nb_previous_dirs *
-            user-given prev_dirs_embedding_size.
+            user-given prev_dirs_embedding_size. If None, embedding_size will
+            be set to 3*nb_previous_dirs.
         prev_dirs_embedding_key: str,
             Key to a embedding class (one of
             dwi_ml.models.embeddings_on_tensors.keys_to_embeddings)
         input_size: int
-            This value should be known from the actual data.
+            This value should be known from the actual data. Number of features
+            in the data (last dimension).
         input_embedding_key: str
             Key to a embedding class (one of
             dwi_ml.models.embeddings_on_tensors.keys_to_embeddings)
         input_embedding_size: int
-            Output embedding size for the input.
+            Output embedding size for the input. If None, will be set to
+            input_size.
+        input_embedding_size_ratio: float
+            Other possibility to define input_embedding_size, which then equals
+            [ratio * (nb_features * (nb_neighbors+1))]
         rnn_key: either 'LSTM' or 'GRU'
         rnn_layer_sizes: List[int]
             The list of layer sizes for the rnn. The real size will depend
@@ -67,50 +77,80 @@ class Learn2TrackModel(MainModelAbstract):
         dropout : float
             If non-zero, introduces a `Dropout` layer on the outputs of each
             RNN layer except the last layer, with given dropout probability.
+        neighborhood_type: str
+            The type of neighborhood to add. One of 'axes', 'grid' or None. If
+            None, don't add any. See
+            dwi_ml.data.processing.space.Neighborhood for more information.
+        neighborhood_radius : Union[int, float, Iterable[float]]
+            Add neighborhood points at the given distance (in voxels) in each
+            direction (nb_neighborhood_axes). (Can be none)
+                - For a grid neighborhood: type must be int.
+                - For an axes neighborhood: type must be float. If it is an
+                iterable of floats, we will use a multi-radius neighborhood.
+        normalize_directions: bool
+            If true, direction vectors are normalized (norm=1). If the step
+            size is fixed, it shouldn't make any difference. If streamlines are
+            compressed, in theory you should normalize, but you could hope that
+            not normalizing could give back to the algorithm a sense of
+            distance between points.
         ---
         [1] https://arxiv.org/pdf/1308.0850v5.pdf
         [2] https://arxiv.org/pdf/1607.06450.pdf
         """
-        super().__init__(experiment_name)
+        super().__init__(experiment_name, neighborhood_type,
+                         neighborhood_radius)
 
-        self.normalize_directions = normalize_directions
-
-        # 0. Verifying keys
         self.prev_dirs_embedding_key = prev_dirs_embedding_key
+        self.nb_previous_dirs = nb_previous_dirs
+        self.prev_dirs_embedding_size = prev_dirs_embedding_size
         self.input_embedding_key = input_embedding_key
+        self.input_embedding_size = input_embedding_size
+        self.input_embedding_size_ratio = input_embedding_size_ratio
+        self.nb_features = nb_features
+        self.use_skip_connection = use_skip_connection
+        self.use_layer_normalization = use_layer_normalization
+        self.rnn_key = rnn_key
+        self.rnn_layer_sizes = rnn_layer_sizes
+        self.dropout = dropout
+        self.normalize_directions = normalize_directions
         self.direction_getter_key = direction_getter_key
-        # and rnn_key will be checked in stacked_rnn.
 
         # 1. Previous dir embedding
-        if prev_dirs_embedding_key:
-            prev_dirs_emb_cls = keys_to_embeddings[prev_dirs_embedding_key]
-        else:
-            prev_dirs_emb_cls = None
-        self.nb_previous_dirs = nb_previous_dirs
         if self.nb_previous_dirs > 0:
-            self.prev_dirs_embedding_size = prev_dirs_embedding_size
+            if prev_dirs_embedding_size is None:
+                self.prev_dirs_embedding_size = nb_previous_dirs * 3
+            prev_dirs_emb_cls = keys_to_embeddings[prev_dirs_embedding_key]
             self.prev_dirs_embedding = prev_dirs_emb_cls(
                 input_size=nb_previous_dirs * 3,
                 output_size=self.prev_dirs_embedding_size)
         else:
-            self.prev_dirs_embedding_size = 0
+            if self.prev_dirs_embedding_size:
+                logging.warning("Previous dirs embedding size was defined but "
+                                "not previous directions are used!")
             self.prev_dirs_embedding = None
 
         # 2. Input embedding
+        nb_neighbors = len(self.neighborhood_points) if \
+            self.neighborhood_points else 0
+        self.input_size = nb_features * (nb_neighbors + 1)
+        if not (input_embedding_size or input_embedding_size_ratio):
+            input_embedding_size = self.input_size
+        if input_embedding_size and input_embedding_size_ratio:
+            raise ValueError(
+                "You must only give one value, either input_embedding_size or "
+                "input_embedding_size_ratio")
+        if input_embedding_size:
+            input_embedding_size = input_embedding_size
+        if input_embedding_size_ratio:
+            input_embedding_size = int(self.input_size *
+                                       input_embedding_size_ratio)
         input_embedding_cls = keys_to_embeddings[input_embedding_key]
-        self.input_embedding_size = input_embedding_size
-        self.input_size = nb_features
         self.input_embedding = input_embedding_cls(
             input_size=self.input_size,
             output_size=input_embedding_size)
 
         # 3. Stacked RNN
         rnn_input_size = self.prev_dirs_embedding_size + input_embedding_size
-        self.use_skip_connection = use_skip_connection
-        self.use_layer_normalization = use_layer_normalization
-        self.rnn_key = rnn_key
-        self.rnn_layer_sizes = rnn_layer_sizes
-        self.dropout = dropout
         self.rnn_model = StackedRNN(
             rnn_key, rnn_input_size, rnn_layer_sizes,
             use_skip_connections=use_skip_connection,
@@ -146,16 +186,18 @@ class Learn2TrackModel(MainModelAbstract):
             'nb_previous_dirs': self.nb_previous_dirs,
             'prev_dirs_embedding_size': self.prev_dirs_embedding_size,
             'prev_dirs_embedding_key': self.prev_dirs_embedding_key,
-            'input_size': int(self.input_size),
+            'nb_features': int(self.nb_features),
             'input_embedding_key': self.input_embedding_key,
-            'input_embedding_size': int(self.input_embedding_size),
+            'input_embedding_size': int(self.input_embedding_size) if
+            self.input_embedding_size else None,
+            'input_embedding_size_ratio': self.input_embedding_size_ratio,
             'rnn_key': self.rnn_key,
             'rnn_layer_sizes': self.rnn_layer_sizes,
             'use_skip_connection': self.use_skip_connection,
             'use_layer_normalization': self.use_layer_normalization,
             'dropout': self.dropout,
             'direction_getter_key': self.direction_getter_key,
-            'normalize_directions': self.normalize_directions
+            'normalize_directions': self.normalize_directions,
         })
 
         return params

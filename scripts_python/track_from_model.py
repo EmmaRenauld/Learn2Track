@@ -39,7 +39,7 @@ from dwi_ml.tracking.utils import (add_mandatory_options_tracking,
                                    add_tracking_options)
 
 from Learn2Track.models.learn2track_model import Learn2TrackModel
-from Learn2Track.tracking.tracking_field import RecurrentTrackingField
+from Learn2Track.data_loaders.tracking_field import RecurrentTrackingField
 from Learn2Track.tracking.propagator import RecurrentPropagator
 
 
