@@ -207,7 +207,6 @@ def main():
                             dtype=np.float32)
     else:
         mask_img = nib.load(args.tm_from_data)
-        mask_affine = mask_img.affine
         mask_data = mask_img.get_fdata(dtype=float)
         mask_res = mask_img.header.get_zooms()[:3]
     mask = DataVolume(mask_data, mask_res, args.mask_interp)

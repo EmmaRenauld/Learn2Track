@@ -205,9 +205,9 @@ class Learn2TrackModel(MainModelWithNeighborhood):
     @staticmethod
     def prepare_inputs(inputs):
         """
-        Inputs should be already prepared by the batch sampler (meaning the
-        neighborhood is added) because it needs to interpolate data from the
-        volumes. Only needs to be packed.
+        Inputs should be already prepared by the batch sampler or by the
+        tracking field (meaning the neighborhood is added) because they need
+        to interpolate data from the volumes. Only needs to be packed.
         """
         packed_inputs = pack_sequence(inputs, enforce_sorted=False)
         return packed_inputs

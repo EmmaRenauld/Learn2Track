@@ -15,10 +15,8 @@ class RecurrentTrackingField(DWIMLTrackingFieldOneInputAndPD):
     as an additional input.
     """
     def __init__(self, model: Learn2TrackModel,
-                 subj_data: SubjectDataAbstract, input_volume_group: str,
-                 neighborhood_type, neighborhood_radius):
-        super().__init__(model, subj_data, input_volume_group,
-                         neighborhood_type, neighborhood_radius)
+                 subj_data: SubjectDataAbstract, input_volume_group: str):
+        super().__init__(model, subj_data, input_volume_group)
 
     def get_model_outputs_at_pos(self, pos, previous_dirs=None,
                                  hidden_recurrent_state=None):
