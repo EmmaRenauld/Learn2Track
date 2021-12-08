@@ -8,21 +8,17 @@ import logging
 
 import numpy as np
 import torch
-from dwi_ml.data.processing.streamlines.post_processing import \
-    compute_and_normalize_directions
-from torch.nn.utils.rnn import PackedSequence, pack_sequence
+from torch.nn.utils.rnn import PackedSequence
 from torch.utils.data.dataloader import DataLoader
 
-from dwi_ml.experiment_utils.learning_utils import compute_gradient_norm
-from dwi_ml.experiment_utils.memory import log_gpu_memory_usage
 from dwi_ml.data_loaders.batch_samplers import (
     BatchStreamlinesSamplerOneInput as BatchSampler)
-from dwi_ml.training.trainers import DWIMLTrainer
+from dwi_ml.training.trainers import DWIMLAbstractTrainer
 
 from Learn2Track.models.learn2track_model import Learn2TrackModel
 
 
-class Learn2TrackTrainer(DWIMLTrainer):
+class Learn2TrackTrainer(DWIMLAbstractTrainer):
     """Trainer for Learn2Track.
 
     This Trainer class's train() method:
@@ -88,166 +84,6 @@ class Learn2TrackTrainer(DWIMLTrainer):
     # train_validate_and_save_loss  as super
     # train_one_epoch               as super
     # validate_one_epoch            as super
-
-    def run_one_batch(self, data, is_training: bool,
-                      batch_sampler: BatchSampler, *args):
-        """Run a batch of data through the model (calling its forward method)
-        and return the mean loss. If training, run the backward method too.
-
-        In the trainer, this is called inside the loop:
-        for epochs: (goes in train_one_epoch)
-            for batches: (goes in train_one_batch)
-                self.model.run_model_and_compute_loss
-
-        If the sampler was instantiated with wait_for_gpu, then we need to
-        compute the inputs here; not done yet.
-
-        Parameters
-        ----------
-        data : tuple of (List, dict)
-            This is the output of the BatchSequencesSampleOneInputVolume's
-            load_batch() function. If wait_for_gpu, data is
-            (batch_streamlines, final_streamline_ids_per_subj). Else, data is
-            (batch_streamlines, final_streamline_ids_per_subj, inputs)
-        batch_sampler: BatchSequencesSamplerOneInputVolume
-            Either self.train_batch_sampler or valid_batch_sampler, depending
-            on the case.
-        is_training : bool
-            If True, record the computation graph and backprop through the
-            model parameters.
-        Returns
-        -------
-        mean_loss : float
-            The mean loss of the provided batch
-        total_norm: float
-            The total norm (sqrt(sum(params**2))) of parameters before gradient
-            clipping, if any.
-        """
-        if is_training:
-            # If training, enable gradients for backpropagation.
-            # Uses torch's module train(), which "turns on" the training mode.
-            self.model.train()
-            grad_context = torch.enable_grad
-        else:
-            # If evaluating, turn gradients off for back-propagation
-            # Uses torch's module eval(), which "turns off" the training mode.
-            self.model.eval()
-            grad_context = torch.no_grad
-
-        with grad_context():
-            if batch_sampler.wait_for_gpu:
-                if not self.use_gpu:
-                    logging.warning(
-                        "Batch sampler has been created with use_gpu=True, so "
-                        "some computations have been skipped to allow user to "
-                        "compute them later on GPU. Now in training, however, "
-                        "you are using CPU, so this was not really useful.\n"
-                        "Maybe this is an error in the code?")
-                # Data interpolation has not been done yet. GPU computations
-                # need to be done here in the main thread. Running final steps
-                # of data preparation.
-                self.logger.debug('Finalizing input data preparation on GPU.')
-                batch_streamlines, final_s_ids_per_subj = data
-
-                # Getting the inputs points from the volumes. Usually done in
-                # load_batch but we preferred to wait here to have a chance to
-                # run things on GPU.
-                batch_inputs = batch_sampler.compute_inputs(
-                    batch_streamlines, final_s_ids_per_subj)
-
-            else:
-                # Data is already ready
-                batch_streamlines, final_s_ids_per_subj, batch_inputs = data
-
-            # Converting streamlines into a list of directions.
-            # + computing previous dirs
-            # + packing everything
-            batch_inputs = self.model.prepare_inputs(batch_inputs)
-            unpacked_directions, batch_directions = self.model.prepare_targets(
-                batch_streamlines, self.device)
-            batch_prev_dirs = self.model.prepare_previous_dirs(
-                unpacked_directions, self.device)
-
-            if self.use_gpu:
-                # Tensors coming from the Dataloader will be on cpu. Sending
-                # to GPU.
-                batch_inputs = batch_inputs.cuda()
-                batch_directions = batch_directions.cuda()
-                if batch_prev_dirs:
-                    batch_prev_dirs = batch_prev_dirs.cuda()
-
-            if is_training:
-                # Reset parameter gradients
-                # See here for some explanation
-                # https://stackoverflow.com/questions/48001598/why-do-we-need-
-                # to-call-zero-grad-in-pytorch
-                self.optimizer.zero_grad()
-
-            self.logger.debug('\n=== Computing forward propagation! ===')
-            try:
-                # Apply model. This calls our model's forward function
-                # (the hidden states are not used here, neither as input nor
-                # outputs. We need them only during tracking).
-                model_outputs, _ = self.model(batch_inputs, batch_prev_dirs)
-            except RuntimeError:
-                # Training RNNs with variable-length sequences on the GPU can
-                # cause memory fragmentation in the pytorch-managed cache,
-                # possibly leading to "random" OOM RuntimeError during
-                # training. Emptying the GPU cache seems to fix the problem for
-                # now. We don't do it every update because it can be time
-                # consuming.
-                torch.cuda.empty_cache()
-                model_outputs, _ = self.model(batch_inputs, batch_prev_dirs)
-
-            # Compute loss
-            self.logger.debug('\n=== Computing loss ===')
-            mean_loss = self.model.compute_loss(model_outputs,
-                                                batch_directions.data)
-            self.logger.info("Loss is : {}".format(mean_loss))
-
-            if is_training:
-                self.logger.debug('\n=== Computing back propagation ===')
-
-                # Explanation on the backward here:
-                # - Each parameter in the RNN and other sub-networks have been
-                #   created with the flag requires_grad=True by torch.
-                #   ==> gradients = [i.grad for i in self.model.parameters()]
-                # - When using parameters to compute something (ex, outputs)
-                #   torch.autograd creates a computational graph, remembering
-                #   all the functions that were used from parameters that
-                #   contain the requires_grad.
-                # - When calling backward, the backward of each sub-function is
-                #   called iteratively, each time computing the partial
-                #   derivative dloss/dw and modifying the parameters' .grad
-                #   ==> model_outputs.grad_fn shows the last used function,
-                #       and thus the first backward to be used, here:
-                #       MeanBackward0  (last function was a mean)
-                #   ==> model_outputs.grad_fn shows that the last used fct
-                #       is AddmmBackward  (addmm = matrix multiplication)
-                mean_loss.backward()
-
-                # Clip gradient if necessary before updating parameters
-                # Remembering unclipped value.
-                grad_norm = compute_gradient_norm(self.model.parameters())
-                self.logger.debug("Gradient norm: {}".format(grad_norm))
-                if self.clip_grad:
-                    # self.grad_norm_monitor.update(grad_norm)
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(),
-                                                   self.clip_grad)
-                    grad_norm = compute_gradient_norm(self.model.parameters())
-                    self.logger.debug(
-                        "Gradient norm when gradients are clipped is {}"
-                        .format(grad_norm))
-
-                # Update parameters
-                self.optimizer.step()
-            else:
-                grad_norm = None
-
-            if self.use_gpu:
-                log_gpu_memory_usage(self.logger)
-
-        return mean_loss.cpu().item(), grad_norm
 
     @classmethod
     def init_from_checkpoint(
@@ -357,3 +193,61 @@ class Learn2TrackTrainer(DWIMLTrainer):
                              self.max_batches_per_epochs))
 
         return n_batches_capped, avg_batch_size
+
+    def run_model(self, batch_inputs, batch_streamlines):
+        """
+        In our case: Packing everything + computing previous directions.
+        """
+        packed_inputs = self.model.prepare_inputs(batch_inputs)
+        directions, packed_directions = self.model.prepare_targets(
+            batch_streamlines, device=None)
+        packed_prev_dirs = self.model.prepare_previous_dirs(directions,
+                                                            device=None)
+
+        if self.use_gpu:
+            # Tensors coming from the Dataloader will be on cpu. Sending
+            # to GPU.
+            packed_inputs = packed_inputs.cuda()
+            packed_directions = packed_directions.cuda()
+            if packed_prev_dirs:
+                packed_prev_dirs = packed_prev_dirs.cuda()
+
+        try:
+            # Apply model. This calls our model's forward function
+            # (the hidden states are not used here, neither as input nor
+            # outputs. We need them only during tracking).
+            model_outputs, _ = self.model(packed_inputs, packed_prev_dirs)
+        except RuntimeError:
+            # Training RNNs with variable-length sequences on the GPU can
+            # cause memory fragmentation in the pytorch-managed cache,
+            # possibly leading to "random" OOM RuntimeError during
+            # training. Emptying the GPU cache seems to fix the problem for
+            # now. We don't do it every update because it can be time
+            # consuming.
+            torch.cuda.empty_cache()
+            model_outputs, _ = self.model(batch_inputs)
+
+        # Returning the packed_directions too, to be re-used in compute_loss
+        # later instead of computing them twice.
+
+        return model_outputs, packed_directions
+
+    def compute_loss(self, model_outputs, _):
+        # super's 2nd parameters, targets, contains the batch streamlines.
+        # Choice 1: Do:
+        # directions, packed_directions = self.model.prepare_targets(
+        #             batch_streamlines, device)
+        # Choice 2: As this was already computed when preparing previous_dirs
+        # for the input model, the formatted targets are returned with the
+        # model outputs. 2nd params becomes unused.
+        model_output_results, targets = model_outputs
+        # In our case, targets is packed. Using its sub-field data.
+        return super().compute_loss(model_output_results, targets.data)
+
+    def fix_parameters(self):
+        """
+        In our case, clipping gradients to avoid exploding gradients in RNN
+        """
+        if self.clip_grad:
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(),
+                                           self.clip_grad)
