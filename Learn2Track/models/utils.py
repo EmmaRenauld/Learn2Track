@@ -2,6 +2,8 @@
 import argparse
 import logging
 
+from dwi_ml.data.processing.space.neighborhood import add_args_neighborhood, \
+    prepare_neighborhood_information
 from dwi_ml.experiment_utils.prints import format_dict_to_str
 from dwi_ml.experiment_utils.timer import Timer
 from dwi_ml.models.embeddings_on_packed_sequences import keys_to_embeddings
@@ -25,7 +27,9 @@ def add_model_args(p: argparse.ArgumentParser):
     prev_dirs_g.add_argument(
         '--prev_dirs_embedding_size', type=int, metavar='s',
         help="Size of the output after passing the previous dirs through the "
-             "embedding \nlayer.")
+             "embedding \nlayer. (Total size. Ex: --nb_previous_dirs 3, "
+             "--prev_dirs_embedding_size 8 \nwould compact 9 information into "
+             "8.) Default: nb_previous_dirs*3.")
 
     inputs_g = p.add_argument_group(
         "Learn2track model: Main inputs embedding layer")
@@ -38,7 +42,7 @@ def add_model_args(p: argparse.ArgumentParser):
     em_size.add_argument(
         '--input_embedding_size', type=float, metavar='s',
         help="Size of the output after passing the previous dirs through the "
-             "embedding layer.")
+             "embedding layer. Default: embedding_size=input_size.")
     em_size.add_argument(
         '--input_embedding_size_ratio', type=float, metavar='r',
         help="Size of the output after passing the previous dirs through the "
@@ -76,7 +80,7 @@ def add_model_args(p: argparse.ArgumentParser):
         help="Model for the direction getter layer."
     )
 
-    g = p.add_argument_group("Learn2track model: Prepare targets")
+    g = p.add_argument_group("Learn2track model: Preparing inputs and targets")
     g.add_argument(
         '--normalize_directions', action='store_true',
         help="If true, directions will be normalized. If the step size is "
@@ -84,43 +88,12 @@ def add_model_args(p: argparse.ArgumentParser):
              "compressed, in theory you should normalize, \nbut you could "
              "hope that not normalizing could give back to the algorithm a \n"
              "sense of distance between points.")
+    add_args_neighborhood(g)
 
 
-def prepare_model(args, input_size):
+def prepare_model(args):
     with Timer("\n\nPreparing model", newline=True, color='yellow'):
-        if args.nb_previous_dirs == 0:
-            args.prev_dirs_embedding_key = None
-        if args.prev_dirs_embedding_key == 'no_embedding':
-            if args.prev_dirs_embedding_size != 3 * args.nb_previous_dirs:
-                logging.warning("With identity embedding (no_embedding), "
-                                "output_size must equal input_size. User "
-                                "value {} discarted and new output_size value "
-                                "will be: {}"
-                                .format(args.prev_dirs_embedding_size,
-                                        3 * args.nb_previous_dirs))
-                args.prev_dirs_embedding_size = 3 * args.nb_previous_dirs
-        elif args.prev_dirs_embedding_size is None:
-            raise ValueError("You must provide the "
-                             "prev_dirs_embedding_size.")
-
-        input_embedding_size = None
-        if args.input_embedding_size:
-            input_embedding_size = args.input_embedding_size
-        elif args.input_embedding_size_ratio:
-            input_embedding_size = \
-                int(input_size * args.input_embedding_size_ratio)
-        if args.input_embedding_key == 'no_embedding':
-            if input_embedding_size != input_size:
-                logging.warning("With identity embedding (no_embedding), "
-                                "output_size must equal input_size. User "
-                                "value {} discarted and new output_size value "
-                                "will be: {}"
-                                .format(input_embedding_size, input_size))
-                input_embedding_size = input_size
-        elif input_embedding_size is None:
-            raise ValueError("You must provide the input_embedding_size or "
-                             "the input_embedding_size_ratio.")
-
+        # INPUTS: verifying args
         model = Learn2TrackModel(
             args.experiment_name,
             # PREVIOUS DIRS
@@ -129,8 +102,9 @@ def prepare_model(args, input_size):
             nb_previous_dirs=args.nb_previous_dirs,
             # INPUTS
             input_embedding_key=args.input_embedding_key,
-            input_embedding_size=input_embedding_size,
-            nb_features=input_size,
+            input_embedding_size=args.input_embedding_size,
+            input_embedding_size_ratio=args.input_embedding_size_ratio,
+            nb_features=args.nb_features,
             # RNN
             rnn_key=args.rnn_key, rnn_layer_sizes=args.rnn_layer_sizes,
             dropout=args.dropout,
@@ -139,7 +113,9 @@ def prepare_model(args, input_size):
             # DIRECTION GETTER
             direction_getter_key=args.direction_getter_key,
             # Other
-            normalize_directions=args.normalize_directions)
+            normalize_directions=args.normalize_directions,
+            neighborhood_type=args.neighborhood_type,
+            neighborhood_radius=args.neighborhood_radius)
 
         # logging.info("Learn2track model user-defined parameters: \n" +
         #              format_dict_to_str(model.params) + '\n')

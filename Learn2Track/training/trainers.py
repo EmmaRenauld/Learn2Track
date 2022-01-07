@@ -11,7 +11,7 @@ import torch
 from torch.nn.utils.rnn import PackedSequence
 from torch.utils.data.dataloader import DataLoader
 
-from dwi_ml.data_loaders.batch_samplers import (
+from dwi_ml.training.batch_samplers import (
     BatchStreamlinesSamplerOneInput as BatchSampler)
 from dwi_ml.training.trainers import DWIMLAbstractTrainer
 
@@ -192,31 +192,28 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
                      .format(dataset_size, n_batches,
                              self.max_batches_per_epochs))
 
+        # toDo
+        #  DEAL WITH THIS
+        # n_batches_capped = 4
+
         return n_batches_capped, avg_batch_size
 
     def run_model(self, batch_inputs, batch_streamlines):
-        """
-        In our case: Packing everything + computing previous directions.
-        """
-        packed_inputs = self.model.prepare_inputs(batch_inputs)
-        directions, packed_directions = self.model.prepare_targets(
-            batch_streamlines, device=None)
-        packed_prev_dirs = self.model.prepare_previous_dirs(directions,
-                                                            device=None)
+        dirs = self.model.format_directions(batch_streamlines, self.device)
 
-        if self.use_gpu:
-            # Tensors coming from the Dataloader will be on cpu. Sending
-            # to GPU.
-            packed_inputs = packed_inputs.cuda()
-            packed_directions = packed_directions.cuda()
-            if packed_prev_dirs:
-                packed_prev_dirs = packed_prev_dirs.cuda()
+        # Formatting the previous dirs for all points.
+        n_prev_dirs = self.model.format_previous_dirs(dirs, self.device)
+
+        # Not keeping the last point: only useful to get the last direction
+        # (last target), but won't be used as an input.
+        n_prev_dirs = [s[:-1] for s in n_prev_dirs]
 
         try:
             # Apply model. This calls our model's forward function
             # (the hidden states are not used here, neither as input nor
             # outputs. We need them only during tracking).
-            model_outputs, _ = self.model(packed_inputs, packed_prev_dirs)
+            model_outputs, _ = self.model(batch_inputs, n_prev_dirs,
+                                          self.device)
         except RuntimeError:
             # Training RNNs with variable-length sequences on the GPU can
             # cause memory fragmentation in the pytorch-managed cache,
@@ -225,24 +222,27 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
             # now. We don't do it every update because it can be time
             # consuming.
             torch.cuda.empty_cache()
-            model_outputs, _ = self.model(batch_inputs)
+            model_outputs, _ = self.model(batch_inputs, n_prev_dirs,
+                                          self.device)
 
-        # Returning the packed_directions too, to be re-used in compute_loss
+        # Returning the directions too, to be re-used in compute_loss
         # later instead of computing them twice.
+        return model_outputs, dirs
 
-        return model_outputs, packed_directions
+    def compute_loss(self, run_model_output_tuple, _):
+        # In theory to do like super, 2nd parameters, targets, would contain
+        # the batch streamlines and we would do:
+        # directions, packed_directions = self.model.format_directions(
+        #             batch_streamlines)
+        # Choice 2: As this was already computed when running run_model
+        # the formatted targets are returned with the model outputs.
+        # 2nd params becomes unused.
+        model_outputs, targets = run_model_output_tuple
 
-    def compute_loss(self, model_outputs, _):
-        # super's 2nd parameters, targets, contains the batch streamlines.
-        # Choice 1: Do:
-        # directions, packed_directions = self.model.prepare_targets(
-        #             batch_streamlines, device)
-        # Choice 2: As this was already computed when preparing previous_dirs
-        # for the input model, the formatted targets are returned with the
-        # model outputs. 2nd params becomes unused.
-        model_output_results, targets = model_outputs
-        # In our case, targets is packed. Using its sub-field data.
-        return super().compute_loss(model_output_results, targets.data)
+        # Compute loss using model.compute_loss (as in super)
+        mean_loss = self.model.compute_loss(model_outputs, targets,
+                                            self.device)
+        return mean_loss
 
     def fix_parameters(self):
         """
