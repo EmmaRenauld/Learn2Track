@@ -192,6 +192,10 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
                      .format(dataset_size, n_batches,
                              self.max_batches_per_epochs))
 
+        # toDo
+        #  DEAL WITH THIS
+        # n_batches_capped = 4
+
         return n_batches_capped, avg_batch_size
 
     def run_model(self, batch_inputs, batch_streamlines):

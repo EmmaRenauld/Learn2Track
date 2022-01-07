@@ -14,15 +14,15 @@ import logging
 import math
 
 import dipy.core.geometry as gm
-import numpy as np
 from dipy.io.stateful_tractogram import (StatefulTractogram, Space,
                                          set_sft_logger_level)
 from dipy.io.streamline import save_tractogram
 import h5py
 import nibabel as nib
+import numpy as np
 import torch
-from scilpy.image.datasets import DataVolume
 
+from scilpy.image.datasets import DataVolume
 from scilpy.io.utils import (add_sphere_arg,
                              assert_inputs_exist, assert_outputs_exist,
                              verify_compression_th, add_processes_arg)
@@ -51,8 +51,7 @@ def build_argparser():
     add_mandatory_options_tracking(p)
 
     track_g = add_tracking_options(p)
-    # Sphere used if the yaml parameter model:direction_getter:key is the
-    # sphere-classification.
+    # Sphere used if the direction_getter key is the sphere-classification.
     add_sphere_arg(track_g, symmetric_only=False)
 
     add_seeding_options(p)
@@ -85,16 +84,16 @@ def build_argparser():
     add_out_options(p)
 
     p.add_argument('--logging', metavar='level',
-                   choices=['info', 'debug', 'warning'], default='warning',
+                   choices=['info', 'debug', 'warning'], default='info',
                    help="Logging level. One of 'debug', 'info' or 'warning'.")
 
     return p
 
 
 def perform_checks(parser, args):
-    #########
-    # Verifying options
-    #########
+    """
+    Verifying options
+    """
     if not nib.streamlines.is_supported(args.out_tractogram):
         parser.error('Invalid output streamline file format (must be trk or ' +
                      'tck): {0}'.format(args.out_tractogram))

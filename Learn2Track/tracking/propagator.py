@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import logging
+
 import numpy as np
 import torch
 from dwi_ml.data.dataset.single_subject_containers import SubjectDataAbstract
@@ -38,28 +40,39 @@ class RecurrentPropagator(DWIMLPropagatorOneInputAndPD):
         # Reverse the streamlines
         super()._reverse_memory_state(line)
 
+        logging.debug("Computing hidden RNN state at backward: recomputing "
+                      "whole sequence to run model.")
+
         # Must re-run the model from scratch to get the hidden states
         # Either load all timepoints in memory and call model once.
         all_inputs = []
-        all_previous_dirs = []
+        all_n_previous_dirs = []
         for i in range(len(line)):
-            # Updating tracking_field's state
-            inputs, previous_dirs = self._prepare_inputs_at_pos(line[i])
+            # toDo
+            #  We could also prepare inputs only, and previous dirs out of loop
+            inputs, n_previous_dirs = self._prepare_inputs_at_pos(line[i])
             all_inputs.append(inputs)
-            all_previous_dirs.append(previous_dirs)
+            all_n_previous_dirs.append(n_previous_dirs[0])
+
+        # all_inputs is a lit of n_points x tensor([1, nb_features])
+        # creating a batch of 1 streamline with tensor[nb_points, nb_features]
+        all_inputs = [torch.cat(all_inputs, dim=0)]
+
+        # all_previous dirs n_points x tensor([1, nb_prev_dirs * 3])
+        # creating a batch of 1 streamline with tensor[nb_points, nb_prev * 3]
+        all_n_previous_dirs = [torch.cat(all_n_previous_dirs, dim=0)]
 
         # Running model
-        packed_inputs = pack_sequence(all_inputs, enforce_sorted=False)
-        packed_prev_dirs = pack_sequence(all_previous_dirs,
-                                         enforce_sorted=False)
-        self.hidden_recurrent_states = self.model(packed_inputs,
-                                                  packed_prev_dirs)
+        _, self.hidden_recurrent_states = self.model(all_inputs,
+                                                     all_n_previous_dirs,
+                                                     self.device)
+        logging.debug("Done.")
 
     def _update_state_after_propagation_step(self, new_pos, new_dir):
         # First re-run the model with final new_dir to get final hidden states
         # (ex; with Runge-Kutta integration, we wouldn't know which hidden
         # state to use, so we need to recompute)
-        print("                   COMPUTING HIDDEN RECCURRENT STATE")
+        # toDo. With runge-kutta=1, we could get the hidden states right away.
         self.hidden_recurrent_states = self._get_model_outputs_at_pos(
             new_pos, get_state_only=True)
 
@@ -85,19 +98,11 @@ class RecurrentPropagator(DWIMLPropagatorOneInputAndPD):
         inputs, n_prev_dirs = self._prepare_inputs_at_pos(pos)
 
         # Sending inputs to lists to simulate a batch to be packed.
-        # n_previous_dirs is already a list.
+        # n_previous_dirs is already a list of 1.
         inputs = [inputs]
-        print("                   RUNNING LEARN2TRACK MODEL TO GET OUTPUTS")
-        print("                   INPUTS: {}".format(inputs[0].shape))
-        print("                   PREV_DIRS: {}".format(n_prev_dirs[0]))
-        print("                   (all dirs: {})".format(self.all_previous_dirs))
-
         model_outputs, hidden_states = self.model(inputs, n_prev_dirs,
                                                   self.device,
                                                   self.hidden_recurrent_states)
-        print("                   Done.")
-        # New hidden current state will be computed in
-        # update_state_after_propagation_step
 
         if get_state_only:
             return hidden_states

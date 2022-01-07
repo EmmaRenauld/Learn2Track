@@ -196,18 +196,23 @@ class Learn2TrackModel(MainModelWithPD):
 
         return params
 
-    def forward(self, inputs: List[torch.tensor], n_prev_dirs: List, device,
-                hidden_reccurent_states: Any = None):
+    def forward(self, inputs: List[torch.tensor],
+                n_prev_dirs: List[torch.tensor], device,
+                hidden_reccurent_states: tuple = None):
         """Run the model on a batch of sequences.
 
         Parameters
         ----------
         inputs: List[torch.tensor]
-            Batch of input sequences, i.e. MRI data.
-        n_prev_dirs: List,
-            Batch of n past directions.
+            Batch of input sequences, i.e. MRI data. Length of the list is the
+            number of streamlines in the batch. Each tensor is of size
+            [nb_points, nb_features].
+        n_prev_dirs: List[torch.tensor],
+            Batch of n past directions. Length of the list is the number of
+            streamlines in the batch. Each tensor is of size
+            [nb_points, nb_previous_dirs * 3].
         device: torch device
-        hidden_reccurent_states : Any
+        hidden_reccurent_states : tuple
             The current hidden states of the (stacked) RNN model.
 
         Returns
@@ -215,9 +220,10 @@ class Learn2TrackModel(MainModelWithPD):
         model_outputs : Any
             Output data, ready to be passed to either `compute_loss()` or
             `get_tracking_directions()`.
-        out_hidden_recurrent_states : Any
-            The last step hidden states (h_(t-1), C_(t-1) for LSTM) for each
-            layer.
+        out_hidden_recurrent_states : tuple
+            The last steps hidden states (h_n, C_n for LSTM) for each layer.
+            Tuple containing nb_layer tuples of 2 tensors (h_n, c_n) with
+            shape(h_n) = shape(c_n) = [1, nb_streamlines, layer_output_size]
         """
 
         # Packing everything and saving info
