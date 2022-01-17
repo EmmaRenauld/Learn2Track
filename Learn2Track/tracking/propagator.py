@@ -6,7 +6,6 @@ import torch
 from dwi_ml.data.dataset.single_subject_containers import SubjectDataAbstract
 from dwi_ml.models.main_models import MainModelAbstract
 from dwi_ml.tracking.propagator import DWIMLPropagatorOneInputAndPD
-from torch.nn.utils.rnn import pack_sequence
 
 
 class RecurrentPropagator(DWIMLPropagatorOneInputAndPD):
