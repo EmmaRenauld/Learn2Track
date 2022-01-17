@@ -2,8 +2,7 @@
 import argparse
 import logging
 
-from dwi_ml.data.processing.space.neighborhood import add_args_neighborhood, \
-    prepare_neighborhood_information
+from dwi_ml.data.processing.space.neighborhood import add_args_neighborhood
 from dwi_ml.experiment_utils.prints import format_dict_to_str
 from dwi_ml.experiment_utils.timer import Timer
 from dwi_ml.models.embeddings_on_packed_sequences import keys_to_embeddings

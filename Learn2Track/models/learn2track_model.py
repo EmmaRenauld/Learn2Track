@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 import logging
-from typing import Any, Tuple, Union, List, Iterable
+from typing import Any, Union, List, Iterable
 
 import torch
-from torch import Tensor
 from torch.nn.utils.rnn import PackedSequence, pack_sequence
 
 from dwi_ml.models.direction_getter_models import keys_to_direction_getters
