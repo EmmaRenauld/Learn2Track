@@ -70,14 +70,12 @@ def add_model_args(p: argparse.ArgumentParser):
     rnn_g.add_argument(
         '--use_layer_normalization', action='store_true',
         help="Add layer normalization. Explained here: \n"
-             "https://arxiv.org/pdf/1607.06450.pdf"
-    )
+             "https://arxiv.org/pdf/1607.06450.pdf")
 
     dg_g = p.add_argument_group("Learn2track model: Direction getter layer")
     dg_g.add_argument(
         '--direction_getter_key', choices=keys_to_direction_getters.keys(),
-        help="Model for the direction getter layer."
-    )
+        help="Model for the direction getter layer.")
 
     g = p.add_argument_group("Learn2track model: Preparing inputs and targets")
     g.add_argument(
@@ -90,7 +88,7 @@ def add_model_args(p: argparse.ArgumentParser):
     add_args_neighborhood(g)
 
 
-def prepare_model(args):
+def prepare_model(args, dg_args):
     with Timer("\n\nPreparing model", newline=True, color='yellow'):
         # INPUTS: verifying args
         model = Learn2TrackModel(
@@ -110,7 +108,7 @@ def prepare_model(args):
             use_layer_normalization=args.use_layer_normalization,
             use_skip_connection=args.use_skip_connection,
             # DIRECTION GETTER
-            direction_getter_key=args.direction_getter_key,
+            direction_getter_key=args.direction_getter_key, dg_args=dg_args,
             # Other
             normalize_directions=args.normalize_directions,
             neighborhood_type=args.neighborhood_type,
