@@ -7,8 +7,8 @@ from os import path
 
 from dwi_ml.data.dataset.utils import prepare_multisubjectdataset
 from dwi_ml.experiment_utils.timer import Timer
-from dwi_ml.training.utils_batch_sampler import prepare_batchsamplers_oneinput
-from dwi_ml.training.utils_trainer import run_experiment
+from dwi_ml.training.utils.batch_sampler import prepare_batchsamplers_oneinput
+from dwi_ml.training.utils.trainer import run_experiment
 
 from Learn2Track.training.trainers import Learn2TrackTrainer
 from Learn2Track.models.utils import prepare_model
@@ -66,7 +66,7 @@ def init_from_checkpoint(args):
 
     # Prepare model
     args_model = argparse.Namespace(**checkpoint_state['model_params'])
-    model = prepare_model(args_model)
+    model = prepare_model(args_model, args_model.dg_args)
 
     # Prepare batch samplers
     args_tr_s = argparse.Namespace(**checkpoint_state['train_sampler_params'])

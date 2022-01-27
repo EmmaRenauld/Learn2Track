@@ -24,13 +24,19 @@ class Learn2TrackModel(MainModelWithPD):
     """
 
     def __init__(self, experiment_name,
+                 # PREVIOUS DIRS
                  nb_previous_dirs: int, prev_dirs_embedding_size: int,
-                 prev_dirs_embedding_key: str, nb_features: int,
-                 input_embedding_key: str, input_embedding_size: int,
-                 input_embedding_size_ratio: float,
+                 prev_dirs_embedding_key: str,
+                 # INPUTS
+                 nb_features: int, input_embedding_key: str,
+                 input_embedding_size: int, input_embedding_size_ratio: float,
+                 # RNN
                  rnn_key: str, rnn_layer_sizes: List[int],
                  use_skip_connection: bool, use_layer_normalization: bool,
-                 dropout: float, direction_getter_key,
+                 dropout: float,
+                 # DIRECTION GETTER
+                 direction_getter_key: str, dg_args: dict,
+                 # Other
                  neighborhood_type: Union[str, None],
                  neighborhood_radius: Union[int, float, Iterable[float], None],
                  normalize_directions: bool):
@@ -73,6 +79,13 @@ class Learn2TrackModel(MainModelWithPD):
         dropout : float
             If non-zero, introduces a `Dropout` layer on the outputs of each
             RNN layer except the last layer, with given dropout probability.
+        direction_getter_key: str
+            Key to a direction getter class (one of
+            dwi_ml.direction_getter_models.keys_to_direction_getters).
+        dg_args: dict
+            Arguments necessary for the instantiation of the chosen direction
+            getter (other than input size, which will be the rnn's output
+            size).
         neighborhood_type: str
             The type of neighborhood to add. One of 'axes', 'grid' or None. If
             None, don't add any. See
@@ -109,6 +122,7 @@ class Learn2TrackModel(MainModelWithPD):
         self.rnn_layer_sizes = rnn_layer_sizes
         self.dropout = dropout
         self.direction_getter_key = direction_getter_key
+        self.dg_args = dg_args
 
         # 1. Previous dir embedding
         if self.nb_previous_dirs > 0:
@@ -154,9 +168,8 @@ class Learn2TrackModel(MainModelWithPD):
 
         # 4. Direction getter
         direction_getter_cls = keys_to_direction_getters[direction_getter_key]
-        # toDo: add parameters. Ex: dropout and nb_gaussians
         self.direction_getter = direction_getter_cls(
-            self.rnn_model.output_size)
+            self.rnn_model.output_size, **dg_args)
 
     @property
     def params_per_layer(self):
@@ -191,6 +204,7 @@ class Learn2TrackModel(MainModelWithPD):
             'use_layer_normalization': self.use_layer_normalization,
             'dropout': self.dropout,
             'direction_getter_key': self.direction_getter_key,
+            'dg_args': self.dg_args,
         })
 
         return params

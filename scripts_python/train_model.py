@@ -60,7 +60,7 @@ def prepare_arg_parser():
              "data.")
 
     # Memory options both for the batch sampler and the trainer:
-    m_g = p.add_argument_group("Memory options :")
+    m_g = p.add_argument_group("Memory options:")
     m_g.add_argument(
         '--use_gpu', action='store_true',
         help="If set, avoids computing and interpolating the inputs (and "
@@ -80,12 +80,46 @@ def prepare_arg_parser():
     add_args_batch_sampler(p)
     add_training_args(p)
 
+    # For the direction getters
+    dg_g = p.add_argument_group("Direction getter:")
+    dg_g.add_argument(
+        '--dg_dropout', type=float,
+        help="Dropout value for the direction getter. Default: the value of "
+             "--dropout option or, if not given, 0.")
+    dg_g.add_argument(
+        '--nb_gaussians', type=int,
+        help="Number of gaussians in the case of a Gaussian Mixture model for "
+             "the direction getter. Default: 3.")
+    dg_g.add_argument(
+        '--nb_clusters', type=int,
+        help="Number of clusters in the case of a Fisher von Mises Mixture "
+             "model for the direction getter. Default: 3.")
+
     return p
 
 
 def init_from_args(p, args):
     # Prepare the dataset
     dataset = prepare_multisubjectdataset(args)
+
+    # Prepare args for the direction getter
+    dg_dropout = args.dg_dropout if args.dg_dropout else \
+        args.dropout if args.dropout else 0
+    dg_args = {'dropout': dg_dropout}
+    if args.direction_getter_key == 'gaussian-mixture':
+        nb_gaussians = args.nb_gaussians if args.nb_gaussians else 3
+        dg_args.update({'nb_gaussians':nb_gaussians})
+    elif args.nb_gaussians:
+        logging.warning("You have provided a value for --nb_gaussians but the "
+                        "chosen direction getter is not the gaussian mixture."
+                        "Ignored.")
+    if args.direction_getter_key == 'fisher-von-mises-mixture':
+        nb_clusters = args.nb_clusters if args.nb_nb_clusters else 3
+        dg_args.update({'n_cluster': nb_clusters})
+    elif args.nb_clusters:
+        logging.warning("You have provided a value for --nb_clusters but the "
+                        "chosen direction getter is not the Fisher von Mises "
+                        "mixture. Ignored.")
 
     # Preparing the model
     if args.grid_radius:
@@ -99,7 +133,7 @@ def init_from_args(p, args):
         args.neighborhood_type = None
     input_group_idx = dataset.volume_groups.index(args.input_group_name)
     args.nb_features = dataset.nb_features[input_group_idx]
-    model = prepare_model(args)
+    model = prepare_model(args, dg_args)
 
     # Preparing the batch samplers
     args.wait_for_gpu = args.use_gpu
