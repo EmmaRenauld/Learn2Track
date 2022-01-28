@@ -11,8 +11,8 @@ import torch
 from torch.nn.utils.rnn import PackedSequence
 from torch.utils.data.dataloader import DataLoader
 
-from dwi_ml.training.batch_samplers import (
-    BatchStreamlinesSamplerOneInput as BatchSampler)
+from dwi_ml.training.batch_samplers import DWIMLBatchSampler
+from dwi_ml.training.batch_loaders import BatchLoaderOneInput
 from dwi_ml.training.trainers import DWIMLAbstractTrainer
 
 from Learn2Track.models.learn2track_model import Learn2TrackModel
@@ -32,8 +32,10 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
     """
 
     def __init__(self,
-                 batch_sampler_training: BatchSampler,
-                 batch_sampler_validation: BatchSampler,
+                 batch_sampler_training: DWIMLBatchSampler,
+                 batch_sampler_validation: DWIMLBatchSampler,
+                 batch_loader_training: BatchLoaderOneInput,
+                 batch_loader_validation: BatchLoaderOneInput,
                  model: Learn2TrackModel, experiment_path: str,
                  experiment_name: str, learning_rate: float,
                  weight_decay: float, max_epochs: int,
@@ -49,6 +51,7 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
             There is no good value here.
         """
         super().__init__(batch_sampler_training, batch_sampler_validation,
+                         batch_loader_training, batch_loader_validation,
                          model, experiment_path, experiment_name,
                          learning_rate, weight_decay, max_epochs,
                          max_batches_per_epoch, patience, nb_cpu_processes,
@@ -70,14 +73,14 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
     def estimate_nb_batches_per_epoch(self):
         logging.info("Learn2track: Estimating training epoch statistics...")
         n_train_batches_capped, _ = self._compute_epoch_stats(
-            self.train_batch_sampler)
+            self.train_batch_sampler, self.train_batch_loader)
 
         n_valid_batches_capped = None
         if self.valid_batch_sampler is not None:
             logging.info("Learn2track: Estimating validation epoch "
                          "statistics...")
             n_valid_batches_capped, _ = self._compute_epoch_stats(
-                self.valid_batch_sampler)
+                self.valid_batch_sampler, self.valid_batch_loader)
 
         return n_train_batches_capped, n_valid_batches_capped
 
@@ -87,8 +90,11 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
 
     @classmethod
     def init_from_checkpoint(
-            cls, batch_sampler_training: BatchSampler,
-            batch_sampler_validation: BatchSampler, model: Learn2TrackModel,
+            cls, train_batch_sampler: DWIMLBatchSampler,
+            valid_batch_sampler: DWIMLBatchSampler,
+            train_batch_loader: BatchLoaderOneInput,
+            valid_batch_loader: BatchLoaderOneInput,
+            model: Learn2TrackModel,
             checkpoint_state: dict, new_patience, new_max_epochs):
         """
         During save_checkpoint(), checkpoint_state.pkl is saved. Loading it
@@ -98,7 +104,8 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
 
         # Use super's method but return this learn2track trainer as 'cls'.
         experiment = super(cls, cls).init_from_checkpoint(
-            batch_sampler_training, batch_sampler_validation, model,
+            train_batch_sampler, valid_batch_sampler,
+            train_batch_loader, valid_batch_loader, model,
             checkpoint_state, new_patience, new_max_epochs)
 
         return experiment
@@ -117,7 +124,8 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
     # load_params_from_checkpoint  same as user
     # check_early_stopping         same as user
 
-    def _compute_epoch_stats(self, batch_sampler: BatchSampler):
+    def _compute_epoch_stats(self, batch_sampler: DWIMLBatchSampler,
+                             batch_loader: BatchLoaderOneInput):
         """
         Compute approximated statistics about epochs.
 
@@ -139,7 +147,7 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
         dataloader = DataLoader(batch_sampler.dataset,
                                 batch_sampler=batch_sampler,
                                 num_workers=0,
-                                collate_fn=batch_sampler.load_batch)
+                                collate_fn=batch_loader.load_batch)
 
         # Get a sample batch to compute stats
         # Note that using this does not really work the same way as during
