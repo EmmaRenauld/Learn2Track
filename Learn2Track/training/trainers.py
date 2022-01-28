@@ -2,7 +2,6 @@
 """
 author: Philippe Poulin (philippe.poulin2@usherbrooke.ca),
         refactored by Emmanuelle Renauld
-date: 24/08/2021
 """
 import logging
 
@@ -11,14 +10,14 @@ import torch
 from torch.nn.utils.rnn import PackedSequence
 from torch.utils.data.dataloader import DataLoader
 
-from dwi_ml.training.batch_samplers import (
-    BatchStreamlinesSamplerOneInput as BatchSampler)
-from dwi_ml.training.trainers import DWIMLAbstractTrainer
+from dwi_ml.training.batch_samplers import DWIMLBatchSampler
+from dwi_ml.training.batch_loaders import BatchLoaderOneInput
+from dwi_ml.training.trainers import DWIMLTrainerOneInput
 
 from Learn2Track.models.learn2track_model import Learn2TrackModel
 
 
-class Learn2TrackTrainer(DWIMLAbstractTrainer):
+class Learn2TrackTrainer(DWIMLTrainerOneInput):
     """Trainer for Learn2Track.
 
     This Trainer class's train() method:
@@ -32,8 +31,10 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
     """
 
     def __init__(self,
-                 batch_sampler_training: BatchSampler,
-                 batch_sampler_validation: BatchSampler,
+                 batch_sampler_training: DWIMLBatchSampler,
+                 batch_sampler_validation: DWIMLBatchSampler,
+                 batch_loader_training: BatchLoaderOneInput,
+                 batch_loader_validation: BatchLoaderOneInput,
                  model: Learn2TrackModel, experiment_path: str,
                  experiment_name: str, learning_rate: float,
                  weight_decay: float, max_epochs: int,
@@ -49,6 +50,7 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
             There is no good value here.
         """
         super().__init__(batch_sampler_training, batch_sampler_validation,
+                         batch_loader_training, batch_loader_validation,
                          model, experiment_path, experiment_name,
                          learning_rate, weight_decay, max_epochs,
                          max_batches_per_epoch, patience, nb_cpu_processes,
@@ -69,15 +71,15 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
 
     def estimate_nb_batches_per_epoch(self):
         logging.info("Learn2track: Estimating training epoch statistics...")
-        n_train_batches_capped, _ = self._compute_epoch_stats(
-            self.train_batch_sampler)
+        n_train_batches_capped, _ = self._estimate_nb_batches_per_epoch(
+            self.train_batch_sampler, self.train_batch_loader)
 
         n_valid_batches_capped = None
         if self.valid_batch_sampler is not None:
             logging.info("Learn2track: Estimating validation epoch "
                          "statistics...")
-            n_valid_batches_capped, _ = self._compute_epoch_stats(
-                self.valid_batch_sampler)
+            n_valid_batches_capped, _ = self._estimate_nb_batches_per_epoch(
+                self.valid_batch_sampler, self.valid_batch_loader)
 
         return n_train_batches_capped, n_valid_batches_capped
 
@@ -87,8 +89,11 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
 
     @classmethod
     def init_from_checkpoint(
-            cls, batch_sampler_training: BatchSampler,
-            batch_sampler_validation: BatchSampler, model: Learn2TrackModel,
+            cls, train_batch_sampler: DWIMLBatchSampler,
+            valid_batch_sampler: DWIMLBatchSampler,
+            train_batch_loader: BatchLoaderOneInput,
+            valid_batch_loader: BatchLoaderOneInput,
+            model: Learn2TrackModel,
             checkpoint_state: dict, new_patience, new_max_epochs):
         """
         During save_checkpoint(), checkpoint_state.pkl is saved. Loading it
@@ -98,7 +103,8 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
 
         # Use super's method but return this learn2track trainer as 'cls'.
         experiment = super(cls, cls).init_from_checkpoint(
-            batch_sampler_training, batch_sampler_validation, model,
+            train_batch_sampler, valid_batch_sampler,
+            train_batch_loader, valid_batch_loader, model,
             checkpoint_state, new_patience, new_max_epochs)
 
         return experiment
@@ -117,20 +123,64 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
     # load_params_from_checkpoint  same as user
     # check_early_stopping         same as user
 
-    def _compute_epoch_stats(self, batch_sampler: BatchSampler):
+    def _estimate_nb_batches_per_epoch(self, batch_sampler: DWIMLBatchSampler,
+                                       batch_loader: BatchLoaderOneInput):
         """
-        Compute approximated statistics about epochs.
-
-        Since the exact data weight per batch can vary based on data
-        augmentation in the batch sampler, we approximate the epoch stats
-        using a sample batch.
+        Compute the number of batches necessary to use all the available data
+        for an epoch (but limiting this to max_nb_batches).
 
         Returns
         -------
         n_batches : int
             Approximate number of updates per epoch
-        batch_sequence_size : int
-            Approximate number of sequences per batch
+        batch_size : int
+            Batch size or approximate batch size.
+        """
+        # Here, 'batch_size' will be computed in terms of number of
+        # streamlines.
+        dataset_size = batch_sampler.dataset.total_nb_streamlines[
+            batch_sampler.streamline_group_idx]
+
+        if batch_sampler.batch_size_units == 'nb_streamlines':
+            # Then the batch size may actually be different, if some
+            # streamlines were split during data augmentation. But still, to
+            # use all the data in one epoch, we simply need to devide the
+            # dataset_size by this:
+            batch_size = batch_sampler.batch_size
+        else:  # batch_sampler.batch_size_units == 'length_mm':
+            # Then the batch size is more or less exact (with the added
+            # gaussian noise possibly changing this a little bit but not much).
+            # But we don't know the actual size in number of streamlines.
+            batch_size, _ = self._compute_stats_on_a_few_batches(batch_sampler,
+                                                                 batch_loader)
+
+        # toDo
+        #  None of these cases ensure us a fixed number of input points. If
+        #  streamlines are compressed, there isn't much more we can do. If
+        #  streamlines have been resampled during loading, though, we can
+        #  approximate the actual batch size in number of points after data
+        #  augmentation (ignored 2nd returned arg above). But how would we know
+        #  how many batches are needed per epoch?
+
+        # Define the number of batches per epoch
+        n_batches = int(dataset_size / batch_size)
+        n_batches_capped = min(n_batches, self.max_batches_per_epochs)
+
+        logging.info("Dataset had {} streamlines (before data augmentation) "
+                     "and each batch contains ~{} streamlines.\nWe will be "
+                     "using approximately {} batches per epoch (but not more "
+                     "than the allowed {}).\n"
+                     .format(dataset_size, batch_size, n_batches,
+                             self.max_batches_per_epochs))
+
+        return n_batches_capped, batch_size
+
+    @staticmethod
+    def _compute_stats_on_a_few_batches(batch_sampler, batch_loader):
+        """
+        Since the exact data weight per batch can vary based on data
+        augmentation in the batch sampler, we approximate the epoch stats
+        using a sample batch.
         """
         # Use temporary RNG states to preserve random "coherency"
         # e.g. when resuming an experiment
@@ -139,7 +189,7 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
         dataloader = DataLoader(batch_sampler.dataset,
                                 batch_sampler=batch_sampler,
                                 num_workers=0,
-                                collate_fn=batch_sampler.load_batch)
+                                collate_fn=batch_loader.load_batch)
 
         # Get a sample batch to compute stats
         # Note that using this does not really work the same way as during
@@ -159,44 +209,27 @@ class Learn2TrackTrainer(DWIMLAbstractTrainer):
             batch_sampler.dataset.volume_cache_manager = None
 
         # Compute stats about epoch
-        # toDO CHANGE THIS TO COUNT TIMESTEPS INSTEAD OF STREAMLINES
-        #  Philippe se créait même un nouveau batch_sampler avec split_ratio=0
-        #  mais ici ça fitte pas avec le abstract batch sampler. Donc changer
-        #  le compte plutôt.
-        logging.warning('(THIS NEEDS DEBUGGING. Check sample_data output and '
-                        'see if we can count the number of points correctly)')
-        batch_sizes = []
+        logging.info("Batch sampler has been ")
+        batches_nb_points = []
+        batches_nb_streamlines = []
         for sample_data in sample_batches:
-            if isinstance(sample_data, PackedSequence):
-                batch_sizes.append(sample_data.batch_sizes[0])
-            else:
-                batch_sizes.append(len(sample_data))
-        avg_batch_size = int(np.mean(batch_sizes))
-        if avg_batch_size == 0:
+            batches_nb_streamlines.append(len(sample_data))
+            batches_nb_points.append(sum([len(s) for s in sample_data]))
+
+        avg_batch_size_nb_streamlines = int(np.mean(batches_nb_streamlines))
+        avg_batch_size_nb_points = int(np.mean(batches_nb_points))
+        if avg_batch_size_nb_points == 0:
             raise ValueError("The allowed batch size ({}) is too small! "
                              "Sampling 0 streamlines per batch."
-                             .format(batch_sampler.max_batch_size))
+                             .format(batch_sampler.batch_size))
+
         logging.info("We have computed that in average, each batch has a "
-                     "size of ~{} (in number of datapoints)"
-                     .format(avg_batch_size))
+                     "size of ~{} streamlines for a total of ~{} number of "
+                     "datapoints)"
+                     .format(avg_batch_size_nb_streamlines,
+                             avg_batch_size_nb_points))
 
-        # Define the number of batch per epoch
-        dataset_size = batch_sampler.dataset.total_nb_streamlines[
-            batch_sampler.streamline_group_idx]
-        n_batches = int(dataset_size / avg_batch_size)
-        n_batches_capped = min(n_batches, self.max_batches_per_epochs)
-
-        logging.info("Dataset had {} streamlines (before data augmentation)\n"
-                     "We will be using approximately {} iterations (i.e. "
-                     "batches) per epoch (but not more than the allowed {}).\n"
-                     .format(dataset_size, n_batches,
-                             self.max_batches_per_epochs))
-
-        # toDo
-        #  DEAL WITH THIS
-        # n_batches_capped = 4
-
-        return n_batches_capped, avg_batch_size
+        return avg_batch_size_nb_streamlines, avg_batch_size_nb_points
 
     def run_model(self, batch_inputs, batch_streamlines):
         dirs = self.model.format_directions(batch_streamlines, self.device)

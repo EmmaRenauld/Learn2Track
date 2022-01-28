@@ -7,7 +7,10 @@ from os import path
 
 from dwi_ml.data.dataset.utils import prepare_multisubjectdataset
 from dwi_ml.experiment_utils.timer import Timer
-from dwi_ml.training.utils.batch_sampler import prepare_batchsamplers_oneinput
+from dwi_ml.training.utils.batch_loaders import \
+    prepare_batchloadersoneinput_train_valid
+from dwi_ml.training.utils.batch_samplers import \
+    prepare_batchsamplers_train_valid
 from dwi_ml.training.utils.trainer import run_experiment
 
 from Learn2Track.training.trainers import Learn2TrackTrainer
@@ -69,17 +72,24 @@ def init_from_checkpoint(args):
     model = prepare_model(args_model, args_model.dg_args)
 
     # Prepare batch samplers
-    args_tr_s = argparse.Namespace(**checkpoint_state['train_sampler_params'])
-    args_va_s = None if checkpoint_state['valid_sampler_params'] is None else \
+    args_ts = argparse.Namespace(**checkpoint_state['train_sampler_params'])
+    args_vs = None if checkpoint_state['valid_sampler_params'] is None else \
         argparse.Namespace(**checkpoint_state['valid_sampler_params'])
     training_batch_sampler, validation_batch_sampler = \
-        prepare_batchsamplers_oneinput(dataset, args_tr_s, args_va_s,
-                                       model.neighborhood_points)
+        prepare_batchsamplers_train_valid(dataset, args_ts, args_vs)
+
+    # Prepare batch loaders
+    args_tl = argparse.Namespace(**checkpoint_state['train_loader_params'])
+    args_vl = None if checkpoint_state['valid_loader_params'] is None else \
+        argparse.Namespace(**checkpoint_state['valid_loader_params'])
+    training_batch_loader, validation_batch_loader = \
+        prepare_batchloadersoneinput_train_valid(dataset, args_tl, args_vl)
 
     # Instantiate trainer
     with Timer("\n\nPreparing trainer", newline=True, color='red'):
         trainer = Learn2TrackTrainer.init_from_checkpoint(
             training_batch_sampler, validation_batch_sampler,
+            training_batch_loader, validation_batch_loader,
             model, checkpoint_state, args.new_patience, args.new_max_epochs)
     return trainer
 
