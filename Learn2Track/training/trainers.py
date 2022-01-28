@@ -215,8 +215,6 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
         for sample_data in sample_batches:
             batches_nb_streamlines.append(len(sample_data))
             batches_nb_points.append(sum([len(s) for s in sample_data]))
-        print(batches_nb_points)
-        print(batches_nb_streamlines)
 
         avg_batch_size_nb_streamlines = int(np.mean(batches_nb_streamlines))
         avg_batch_size_nb_points = int(np.mean(batches_nb_points))
