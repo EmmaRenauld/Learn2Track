@@ -7,7 +7,6 @@ import logging
 
 import numpy as np
 import torch
-from torch.nn.utils.rnn import PackedSequence
 from torch.utils.data.dataloader import DataLoader
 
 from dwi_ml.training.batch_samplers import DWIMLBatchSampler

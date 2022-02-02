@@ -6,7 +6,6 @@ from dwi_ml.data.processing.space.neighborhood import add_args_neighborhood
 from dwi_ml.experiment_utils.prints import format_dict_to_str
 from dwi_ml.experiment_utils.timer import Timer
 from dwi_ml.models.embeddings_on_packed_sequences import keys_to_embeddings
-from dwi_ml.models.direction_getter_models import keys_to_direction_getters
 
 from Learn2Track.models.learn2track_model import Learn2TrackModel
 
@@ -72,12 +71,7 @@ def add_model_args(p: argparse.ArgumentParser):
         help="Add layer normalization. Explained here: \n"
              "https://arxiv.org/pdf/1607.06450.pdf")
 
-    dg_g = p.add_argument_group("Learn2track model: Direction getter layer")
-    dg_g.add_argument(
-        '--direction_getter_key', choices=keys_to_direction_getters.keys(),
-        help="Model for the direction getter layer.")
-
-    g = p.add_argument_group("Learn2track model: Preparing inputs and targets")
+    g = p.add_argument_group("Learn2track model: others")
     g.add_argument(
         '--normalize_directions', action='store_true',
         help="If true, directions will be normalized. If the step size is "
@@ -108,7 +102,7 @@ def prepare_model(args, dg_args):
             use_layer_normalization=args.use_layer_normalization,
             use_skip_connection=args.use_skip_connection,
             # DIRECTION GETTER
-            direction_getter_key=args.direction_getter_key, dg_args=dg_args,
+            direction_getter_key=args.dg_key, dg_args=dg_args,
             # Other
             normalize_directions=args.normalize_directions,
             neighborhood_type=args.neighborhood_type,
