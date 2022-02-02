@@ -2,83 +2,72 @@
 #########
 # Choose study
 #########
-study=MY_STUDY
 database_folder=MY_PATH
-subjects_list=SUBJS.txt
-
-#########
-# Find folders and subject lists
-#########
-
-# Printing infos on current study
-    echo -e "=========LEARN2TRACK\n" \
-         "     Chosen study: $study \n"         \
-         "     Input data: $database_folder \n" \
-         "     Subject list: $subjects_list \n"  \
-         "     Please verify that tree contains original (ex, tractoflow input) + preprocessed (ex, tractoflow output)"
-    tree -d -L 2 $database_folder
-    cat $subjects_list
 
 
 #########
-# Organize from tractoflow
+# Organize your files.
 #########
-    rm -r $database_folder/dwi_ml_ready
-    bash $my_bash_scripts/organize_from_tractoflow.sh $database_folder $subjects_list
-    tree -d -L 2 $database_folder
-    first_subj=`ls $database_folder/dwi_ml_ready | awk -F' ' '{ print $1}'`
-    tree $database_folder/dwi_ml_ready/$first_subj
-
-
-#########
-# Organize from recobundles
-#########
-    bash $my_bash_scripts/organize_from_recobundles.sh $database_folder RecobundlesX/multi_bundles $subjects_list
-
-
-# ===========================================================================
 
 #########
 # Create hdf5 dataset
 #########
-    # Choosing the parameters for this study
-    eval config_file=\${config_file_$study}
-    eval training_subjs=\${training_subjs_$study}
-    eval validation_subjs=\${validation_subjs_$study}
-    now=`date +'%Y_%d_%m_%HH%MM'`
-    name=${study}_$now
+space='rasmm'
+name='my_hdf5_database'
+mask="mask/*__mask_wm.nii.gz"
 
-    # Paramaters that I keep fixed for all studies
-    mask="masks/wm_mask.nii.gz"
-    space="rasmm"  # {rasmm,vox,voxmm}
+dwi_ml_ready_folder=my_path/dwi_ml_ready
+hdf5_folder=my_path
+config_file=my_config_file
+training_subjs=file1.txt
+validation_subjs=file2.txt
+testing_subjs=file3.txt
 
-    echo -e "=========RUNNING LEARN2TRACK HDF5 DATASET CREATION\n" \
-         "     Study: $name \n" \
-         "     Config file: $config_file \n"       \
-         "     Training subjects: $training_subjs \n"  \
-         "     Validation subjects: $validation_subjs \n" \
-         "     mask for standardization: $mask \n" \
-         "     Complete config_file infos: \n"
-    cat $config_file
-
-    # Preparing hdf5.
-    create_hdf5_dataset.py --force --name $name --std_mask $mask \
+l2t_create_hdf5_dataset.py --force --name $name --std_mask $mask \
         --logging info --space $space --enforce_files_presence True \
-        --independent_modalities True \
-        $database_folder/dwi_ml_ready $database_folder $config_file \
-        $training_subjs $validation_subjs
+        $dwi_ml_ready_folder $hdf5_folder $config_file \
+        $training_subjs $validation_subjs $testing_subjs
 
 ############
 # Train model
 ############
+batch_size=100
+batch_size_units='nb_streamlines'
+max_batches_per_epoch=10
+max_epochs=2
+experiment_name=test_experiment
+input_group_name='input'
+streamline_group_name='streamlines'
 
-    python train_model.py --loggin info \
-        --input_group 'input' --target_group 'streamlines' \
-        --hdf5_file $database_folder/hdf5/ismrm2015_noArtefact_test.hdf5 \
-        --yaml_parameters $learn2track/parameters/training_parameters_experimentX.yaml \
-        --experiment_name test_experiment1 $experiment_folder/Learn2track
+experiment_folder=my_path
+hdf5_file=my_path/my_hdf5_database.hdf5
 
-    # Re-run from checkpoint
-    python train_model.py --loggin info \
-        --experiment_name test_experiment1 --experiment_path $main_folder/experiments/Learn2Track \
-        --override_checkpoint_max_epochs 20
+l2t_train_model.py --logging 'info' --lazy \
+        --nb_previous_dirs 3 \
+        --direction_getter_key cosine-regression --normalize_direction \
+        --batch_size $batch_size --batch_size_units $batch_size_units \
+        --max_epochs $max_epochs --max_batches_per_epoch $max_batches_per_epoch \
+        $experiment_folder $experiment_name $hdf5_file \
+        $input_group_name $streamline_group_name
+
+# Run from checkpoint
+l2t_resume_training_from_checkpoint.py --logging info  \
+    --new_max_epochs 3 $experiment_folder $experiment_name
+
+visualize_logs.py $experiment_folder/$experiment_name
+
+
+##############
+# Track from model
+##############
+tracking_mask=
+seeding_mask=
+subj_id=
+out_tractogram=my_tractogram
+algo='det'
+
+l2t_track_from_model.py \
+        $tracking_mask $seeding_mask --input_from_hdf5 'input' \
+        --subj_id $subj_id --hdf5_file $hdf5_file \
+         --logging info \
+        $experiment_folder/$experiment_name $out_tractogram $algo
