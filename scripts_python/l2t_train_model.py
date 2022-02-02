@@ -176,7 +176,7 @@ def main():
     if path.exists(os.path.join(args.experiment_path, args.experiment_name,
                                 "checkpoint")):
         raise FileExistsError("This experiment already exists. Delete or use "
-                              "script resume_training_from_checkpoint.py.")
+                              "script l2t_resume_training_from_checkpoint.py.")
 
     trainer = init_from_args(p, args)
 
