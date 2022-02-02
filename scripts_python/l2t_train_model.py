@@ -92,7 +92,7 @@ def prepare_arg_parser():
 
 def init_from_args(p, args):
     # Prepare the dataset
-    dataset = prepare_multisubjectdataset(args)
+    dataset = prepare_multisubjectdataset(args, load_testing=False)
 
     # Prepare args for the direction getter
     if not args.dg_dropout and args.dropout:
