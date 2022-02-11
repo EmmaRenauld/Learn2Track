@@ -15,6 +15,8 @@ from scilpy.io.utils import assert_inputs_exist, assert_outputs_exist
 
 from dwi_ml.data.dataset.utils import (
     add_args_dataset, prepare_multisubjectdataset)
+from dwi_ml.models.utils.direction_getters import (
+    add_direction_getter_args, check_args_direction_getter)
 from dwi_ml.training.utils.batch_samplers import (
     add_args_batch_sampler, prepare_batchsamplers_train_valid)
 from dwi_ml.training.utils.batch_loaders import (
@@ -78,51 +80,24 @@ def prepare_arg_parser():
 
     add_args_dataset(p)
     add_model_args(p)
+    add_direction_getter_args(p)
+
     # For the abstract batch sampler class:
     add_args_batch_sampler(p)
     add_args_batch_loader(p)
     add_training_args(p)
-
-    # For the direction getters
-    dg_g = p.add_argument_group("Direction getter:")
-    dg_g.add_argument(
-        '--dg_dropout', type=float,
-        help="Dropout value for the direction getter. Default: the value of "
-             "--dropout option or, if not given, 0.")
-    dg_g.add_argument(
-        '--nb_gaussians', type=int,
-        help="Number of gaussians in the case of a Gaussian Mixture model for "
-             "the direction getter. Default: 3.")
-    dg_g.add_argument(
-        '--nb_clusters', type=int,
-        help="Number of clusters in the case of a Fisher von Mises Mixture "
-             "model for the direction getter. Default: 3.")
 
     return p
 
 
 def init_from_args(p, args):
     # Prepare the dataset
-    dataset = prepare_multisubjectdataset(args)
+    dataset = prepare_multisubjectdataset(args, load_testing=False)
 
     # Prepare args for the direction getter
-    dg_dropout = args.dg_dropout if args.dg_dropout else \
-        args.dropout if args.dropout else 0
-    dg_args = {'dropout': dg_dropout}
-    if args.direction_getter_key == 'gaussian-mixture':
-        nb_gaussians = args.nb_gaussians if args.nb_gaussians else 3
-        dg_args.update({'nb_gaussians':nb_gaussians})
-    elif args.nb_gaussians:
-        logging.warning("You have provided a value for --nb_gaussians but the "
-                        "chosen direction getter is not the gaussian mixture."
-                        "Ignored.")
-    if args.direction_getter_key == 'fisher-von-mises-mixture':
-        nb_clusters = args.nb_clusters if args.nb_nb_clusters else 3
-        dg_args.update({'n_cluster': nb_clusters})
-    elif args.nb_clusters:
-        logging.warning("You have provided a value for --nb_clusters but the "
-                        "chosen direction getter is not the Fisher von Mises "
-                        "mixture. Ignored.")
+    if not args.dg_dropout and args.dropout:
+        args.dg_dropout = args.dropout
+    dg_args = check_args_direction_getter(args)
 
     # Preparing the model
     if args.grid_radius:
