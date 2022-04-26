@@ -43,9 +43,9 @@ def prepare_arg_parser():
                    help="Logging level. Error, warning, info are as usual.\n"
                         "The other options are two equivalents of 'debug' "
                         "level. \nWith 'as_much_as_possible', we print the "
-                        "debug level only when the final result is still "
+                        "debug level only when the final\n result is still "
                         "readable (even during parallel training and during "
-                        "tqdm loop). 'debug' print everything always, "
+                        "tqdm loop).\n'debug' prints everything always, "
                         "even if ugly.")
 
     return p
