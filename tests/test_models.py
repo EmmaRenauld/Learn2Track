@@ -125,7 +125,7 @@ def test_learn2track(model_prev_dirs, inputs, prev_dirs, nb_previous_dirs):
                              'grid', 1, 'nn_embedding', 1,
                              'lstm', [10, 12], use_skip_connection=True,
                              use_layer_normalization=True, dropout=0.5,
-                             direction_getter_key='cosine-regression')
+                             dg_key='cosine-regression')
 
     print("\nUsing forward...")
     directions, state = model.forward(inputs, prev_dirs)

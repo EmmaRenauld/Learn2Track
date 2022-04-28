@@ -35,7 +35,7 @@ class Learn2TrackModel(MainModelWithPD):
                  use_skip_connection: bool, use_layer_normalization: bool,
                  dropout: float,
                  # DIRECTION GETTER
-                 direction_getter_key: str, dg_args: dict,
+                 dg_key: str, dg_args: dict,
                  # Other
                  neighborhood_type: Union[str, None],
                  neighborhood_radius: Union[int, float, Iterable[float], None],
@@ -79,7 +79,7 @@ class Learn2TrackModel(MainModelWithPD):
         dropout : float
             If non-zero, introduces a `Dropout` layer on the outputs of each
             RNN layer except the last layer, with given dropout probability.
-        direction_getter_key: str
+        dg_key: str
             Key to a direction getter class (one of
             dwi_ml.direction_getter_models.keys_to_direction_getters).
         dg_args: dict
@@ -121,7 +121,7 @@ class Learn2TrackModel(MainModelWithPD):
         self.rnn_key = rnn_key
         self.rnn_layer_sizes = rnn_layer_sizes
         self.dropout = dropout
-        self.direction_getter_key = direction_getter_key
+        self.dg_key = dg_key
         self.dg_args = dg_args
 
         # 1. Previous dir embedding
@@ -167,7 +167,7 @@ class Learn2TrackModel(MainModelWithPD):
             logger=self.logger)
 
         # 4. Direction getter
-        direction_getter_cls = keys_to_direction_getters[direction_getter_key]
+        direction_getter_cls = keys_to_direction_getters[dg_key]
         self.direction_getter = direction_getter_cls(
             self.rnn_model.output_size, **dg_args)
 
@@ -203,7 +203,7 @@ class Learn2TrackModel(MainModelWithPD):
             'use_skip_connection': self.use_skip_connection,
             'use_layer_normalization': self.use_layer_normalization,
             'dropout': self.dropout,
-            'direction_getter_key': self.direction_getter_key,
+            'dg_key': self.dg_key,
             'dg_args': self.dg_args,
         })
 
