@@ -20,10 +20,10 @@ from Learn2Track.models.utils import prepare_model
 def prepare_arg_parser():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawTextHelpFormatter)
-    p.add_argument('experiment_path', default='./', metavar='p',
+    p.add_argument('experiment_path', default='./',
                    help='Path where to save your experiment. \nComplete path '
                         'will be experiment_path/experiment_name. Default: ./')
-    p.add_argument('experiment_name', metavar='n',
+    p.add_argument('experiment_name',
                    help='If given, name for the experiment. Else, model will '
                         'decide the name to \ngive based on time of day.')
 
@@ -37,16 +37,10 @@ def prepare_arg_parser():
                         'to allow experiment \nto continue if the allowed '
                         'number of epochs has been previously reached.')
 
-    p.add_argument('--logging', dest='logging_choice',
-                   choices=['error', 'warning', 'info', 'as_much_as_possible',
-                            'debug'],
-                   help="Logging level. Error, warning, info are as usual.\n"
-                        "The other options are two equivalents of 'debug' "
-                        "level. \nWith 'as_much_as_possible', we print the "
-                        "debug level only when the final\n result is still "
-                        "readable (even during parallel training and during "
-                        "tqdm loop).\n'debug' prints everything always, "
-                        "even if ugly.")
+    p.add_argument('--logging', dest='logging_choice', default='WARNING',
+                   choices=['ERROR', 'WARNING', 'INFO', 'DEBUG'],
+                   help="Logging level. Note that, for readability, not all "
+                        "debug logs are printed in DEBUG mode.")
 
     return p
 
@@ -71,19 +65,26 @@ def init_from_checkpoint(args):
     args_model = argparse.Namespace(**checkpoint_state['model_params'])
     model = prepare_model(args_model, args_model.dg_args)
 
+    # Setting log level to INFO maximum for sub-loggers, else it become ugly
+    sub_loggers_level = args.logging_choice
+    if args.logging_choice == 'DEBUG':
+        sub_loggers_level = 'INFO'
+
     # Prepare batch samplers
     args_ts = argparse.Namespace(**checkpoint_state['train_sampler_params'])
     args_vs = None if checkpoint_state['valid_sampler_params'] is None else \
         argparse.Namespace(**checkpoint_state['valid_sampler_params'])
     training_batch_sampler, validation_batch_sampler = \
-        prepare_batchsamplers_train_valid(dataset, args_ts, args_vs)
+        prepare_batchsamplers_train_valid(dataset, args_ts, args_vs,
+                                          sub_loggers_level)
 
     # Prepare batch loaders
     args_tl = argparse.Namespace(**checkpoint_state['train_loader_params'])
     args_vl = None if checkpoint_state['valid_loader_params'] is None else \
         argparse.Namespace(**checkpoint_state['valid_loader_params'])
     training_batch_loader, validation_batch_loader = \
-        prepare_batchloadersoneinput_train_valid(dataset, args_tl, args_vl)
+        prepare_batchloadersoneinput_train_valid(dataset, args_tl, args_vl,
+                                                 sub_loggers_level)
 
     # Instantiate trainer
     with Timer("\n\nPreparing trainer", newline=True, color='red'):

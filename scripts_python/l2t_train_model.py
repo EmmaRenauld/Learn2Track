@@ -3,14 +3,14 @@
 
 """
 Train a model for Learn2Track
-
-See an example of the yaml file in the parameters folder.
 """
 import argparse
 import logging
 import os
 from os import path
 
+from dwi_ml.experiment_utils.prints import format_dict_to_str
+from dwi_ml.experiment_utils.timer import Timer
 from scilpy.io.utils import assert_inputs_exist, assert_outputs_exist
 
 from dwi_ml.data.dataset.utils import (
@@ -28,7 +28,8 @@ from dwi_ml.training.utils.experiment import (
 from dwi_ml.training.utils.trainer import run_experiment
 
 from Learn2Track.models.utils import add_model_args, prepare_model
-from Learn2Track.training.utils import add_training_args, prepare_trainer
+from Learn2Track.training.trainers import Learn2TrackTrainer
+from Learn2Track.training.utils import add_training_args
 
 
 def prepare_arg_parser():
@@ -49,16 +50,17 @@ def prepare_arg_parser():
     return p
 
 
-def init_from_args(p, args):
+def init_from_args(args):
     # Prepare the dataset
     dataset = prepare_multisubjectdataset(args, load_testing=False)
 
-    # Prepare args for the direction getter
+    # Preparing the model
+
+    # (Direction getter)
     if not args.dg_dropout and args.dropout:
         args.dg_dropout = args.dropout
+    # (Neighborhood)
     dg_args = check_args_direction_getter(args)
-
-    # Preparing the model
     if args.grid_radius:
         args.neighborhood_radius = args.grid_radius
         args.neighborhood_type = 'grid'
@@ -68,24 +70,48 @@ def init_from_args(p, args):
     else:
         args.neighborhood_radius = None
         args.neighborhood_type = None
+    # (Nb features)
     input_group_idx = dataset.volume_groups.index(args.input_group_name)
     args.nb_features = dataset.nb_features[input_group_idx]
+    # Final model
     model = prepare_model(args, dg_args)
+
+    # Setting log level to INFO maximum for sub-loggers, else it become ugly
+    sub_loggers_level = args.logging_choice
+    if args.logging_choice == 'DEBUG':
+        sub_loggers_level = 'INFO'
 
     # Preparing the batch samplers
     args.wait_for_gpu = args.use_gpu
     training_batch_sampler, validation_batch_sampler = \
-        prepare_batchsamplers_train_valid(dataset, args, args)
+        prepare_batchsamplers_train_valid(dataset, args, args,
+                                          sub_loggers_level)
 
     # Preparing the batch loaders
     args.neighborhood_points = model.neighborhood_points
     training_batch_loader, validation_batch_loader = \
-        prepare_batchloadersoneinput_train_valid(dataset, args, args)
+        prepare_batchloadersoneinput_train_valid(dataset, args, args,
+                                                 sub_loggers_level)
 
-    # Preparing the trainer
-    trainer = prepare_trainer(training_batch_sampler, validation_batch_sampler,
-                              training_batch_loader, validation_batch_loader,
-                              model, args)
+    # Instantiate trainer
+    with Timer("\n\nPreparing trainer", newline=True, color='red'):
+        trainer = Learn2TrackTrainer(
+            model, args.experiment_path, args.experiment_name,
+            training_batch_sampler, training_batch_loader,
+            validation_batch_sampler, validation_batch_loader,
+            # COMET
+            comet_project=args.comet_project,
+            comet_workspace=args.comet_workspace,
+            # TRAINING
+            learning_rate=args.learning_rate, max_epochs=args.max_epochs,
+            max_batches_per_epoch=args.max_batches_per_epoch,
+            patience=args.patience, from_checkpoint=False,
+            weight_decay=args.weight_decay, clip_grad=args.clip_grad,
+            # MEMORY
+            # toDo check this
+            nb_cpu_processes=args.processes,
+            taskman_managed=args.taskman_managed, use_gpu=args.use_gpu)
+        logging.info("Trainer params : " + format_dict_to_str(trainer.params))
 
     return trainer
 
@@ -97,10 +123,7 @@ def main():
     # Initialize logger for preparation (loading data, model, experiment)
     # If 'as_much_as_possible', we will modify the logging level when starting
     # the training, else very ugly
-    logging_level = args.logging_choice.upper()
-    if args.logging_choice == 'as_much_as_possible':
-        logging_level = 'DEBUG'
-    logging.basicConfig(level=logging_level)
+    logging.basicConfig(level=args.logging_choice)
 
     # Check that all files exist
     assert_inputs_exist(p, [args.hdf5_file])
@@ -112,7 +135,7 @@ def main():
         raise FileExistsError("This experiment already exists. Delete or use "
                               "script l2t_resume_training_from_checkpoint.py.")
 
-    trainer = init_from_args(p, args)
+    trainer = init_from_args(args)
 
     run_experiment(trainer, args.logging_choice)
 

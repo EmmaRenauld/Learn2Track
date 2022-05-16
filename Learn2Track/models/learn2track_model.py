@@ -159,7 +159,9 @@ class Learn2TrackModel(MainModelWithPD):
             output_size=input_embedding_size)
 
         # 3. Stacked RNN
-        rnn_input_size = self.prev_dirs_embedding_size + input_embedding_size
+        rnn_input_size = input_embedding_size
+        if self.nb_previous_dirs > 0:
+            rnn_input_size += self.prev_dirs_embedding_size
         self.rnn_model = StackedRNN(
             rnn_key, rnn_input_size, rnn_layer_sizes,
             use_skip_connections=use_skip_connection,
@@ -241,8 +243,11 @@ class Learn2TrackModel(MainModelWithPD):
 
         # Packing everything and saving info
         inputs = pack_sequence(inputs, enforce_sorted=False).to(device)
-        n_prev_dirs = \
-            pack_sequence(n_prev_dirs, enforce_sorted=False).to(device)
+
+        if n_prev_dirs is not None:  # self.nb_previous_dirs should be > 0
+            n_prev_dirs = \
+                pack_sequence(n_prev_dirs, enforce_sorted=False).to(device)
+
         batch_sizes = inputs.batch_sizes
         sorted_indices = inputs.sorted_indices
         unsorted_indices = inputs.unsorted_indices
@@ -250,7 +255,7 @@ class Learn2TrackModel(MainModelWithPD):
         # RUNNING THE MODEL
         self.logger.debug("================ 1. Previous dir embedding, if any "
                           "(on packed_sequence's tensor!)...")
-        if n_prev_dirs is not None:
+        if n_prev_dirs is not None:  # self.nb_previous_dirs should be > 0
             self.logger.debug(
                 "Input size: {}".format(n_prev_dirs.data.shape[-1]))
             n_prev_dirs = self.prev_dirs_embedding(n_prev_dirs.data)

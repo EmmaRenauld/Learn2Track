@@ -239,7 +239,8 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
 
         # Not keeping the last point: only useful to get the last direction
         # (last target), but won't be used as an input.
-        n_prev_dirs = [s[:-1] for s in n_prev_dirs]
+        if n_prev_dirs is not None:
+            n_prev_dirs = [s[:-1] for s in n_prev_dirs]
 
         try:
             # Apply model. This calls our model's forward function
