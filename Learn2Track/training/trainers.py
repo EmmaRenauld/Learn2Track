@@ -29,7 +29,7 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
     saved locally in the experiment_path.
     """
     def __init__(self,
-                 model: Learn2TrackModel, experiment_path: str,
+                 model: Learn2TrackModel, experiments_path: str,
                  experiment_name: str,
                  batch_sampler_training: DWIMLBatchSampler,
                  batch_loader_training: BatchLoaderOneInput,
@@ -49,7 +49,7 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
             The value to which to clip gradients after the backward pass.
             There is no good value here. Default: 1000.
         """
-        super().__init__(model, experiment_path, experiment_name,
+        super().__init__(model, experiments_path, experiment_name,
                          batch_sampler_training, batch_loader_training,
                          batch_sampler_validation, batch_loader_validation,
                          learning_rate, weight_decay, max_epochs,
@@ -89,11 +89,11 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
 
     @classmethod
     def init_from_checkpoint(
-            cls, train_batch_sampler: DWIMLBatchSampler,
-            valid_batch_sampler: DWIMLBatchSampler,
+            cls, model: Learn2TrackModel, experiments_path, experiment_name,
+            train_batch_sampler: DWIMLBatchSampler,
             train_batch_loader: BatchLoaderOneInput,
+            valid_batch_sampler: DWIMLBatchSampler,
             valid_batch_loader: BatchLoaderOneInput,
-            model: Learn2TrackModel,
             checkpoint_state: dict, new_patience, new_max_epochs):
         """
         During save_checkpoint(), checkpoint_state.pkl is saved. Loading it
@@ -103,8 +103,9 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
 
         # Use super's method but return this learn2track trainer as 'cls'.
         experiment = super(cls, cls).init_from_checkpoint(
-            train_batch_sampler, valid_batch_sampler,
-            train_batch_loader, valid_batch_loader, model,
+            model, experiments_path, experiment_name,
+            train_batch_sampler, train_batch_loader,
+            valid_batch_sampler, valid_batch_loader,
             checkpoint_state, new_patience, new_max_epochs)
 
         return experiment

@@ -235,8 +235,7 @@ def _prepare_data(parser, args, hdf_handle):
             parser.error("Subject id must be given to retrieve data from "
                          "hdf5.")
         subj_data = SubjectData.init_from_hdf(
-            args.subj_id, logging.getLogger(), hdf_handle,
-            group_info=None)
+            args.subj_id, hdf_handle, group_info=None)
         volume_group = args.input_from_hdf5
     else:
         volume_img = nib.load(args.input)

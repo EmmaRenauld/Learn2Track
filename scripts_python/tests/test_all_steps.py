@@ -43,6 +43,7 @@ def test_execution_bst(script_runner):
                             input_group_name, streamline_group_name,
                             '--max_epochs', '1', '--batch_size', '5',
                             '--batch_size_units', 'nb_streamlines',
+                            '--max_batches_per_epoch', '5',
                             '--logging', 'INFO')
     assert ret.success
 
@@ -62,5 +63,5 @@ def test_execution_bst(script_runner):
         '--tm_from_hdf5', TEST_EXPECTED_VOLUME_GROUPS[1],
         '--input_from_hdf5', TEST_EXPECTED_VOLUME_GROUPS[0],
         '--hdf5_file', hdf5_file, '--subj_id', TEST_EXPECTED_SUBJ_NAMES[0])
-    # NOT READY YET. FAILS:
-    # assert ret.success
+
+    assert ret.success

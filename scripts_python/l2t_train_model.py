@@ -96,7 +96,7 @@ def init_from_args(args):
     # Instantiate trainer
     with Timer("\n\nPreparing trainer", newline=True, color='red'):
         trainer = Learn2TrackTrainer(
-            model, args.experiment_path, args.experiment_name,
+            model, args.experiments_path, args.experiment_name,
             training_batch_sampler, training_batch_loader,
             validation_batch_sampler, validation_batch_loader,
             # COMET
@@ -127,10 +127,10 @@ def main():
 
     # Check that all files exist
     assert_inputs_exist(p, [args.hdf5_file])
-    assert_outputs_exist(p, args, args.experiment_path)
+    assert_outputs_exist(p, args, args.experiments_path)
 
     # Verify if a checkpoint has been saved. Else create an experiment.
-    if path.exists(os.path.join(args.experiment_path, args.experiment_name,
+    if path.exists(os.path.join(args.experiments_path, args.experiment_name,
                                 "checkpoint")):
         raise FileExistsError("This experiment already exists. Delete or use "
                               "script l2t_resume_training_from_checkpoint.py.")
