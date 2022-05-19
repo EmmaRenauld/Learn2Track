@@ -3,6 +3,7 @@ import logging
 from typing import Any, Union, List, Iterable
 
 import torch
+from dwi_ml.data.packed_sequences import unpack_sequence
 from torch.nn.utils.rnn import PackedSequence, pack_sequence
 
 from dwi_ml.models.direction_getter_models import keys_to_direction_getters
@@ -10,6 +11,8 @@ from dwi_ml.models.embeddings_on_tensors import keys_to_embeddings
 from dwi_ml.models.main_models import MainModelWithPD
 
 from Learn2Track.models.stacked_rnn import StackedRNN
+
+logger = logging.getLogger('model_logger')  # Same logger as Super.
 
 
 class Learn2TrackModel(MainModelWithPD):
@@ -23,29 +26,41 @@ class Learn2TrackModel(MainModelWithPD):
     distribution parameters).
     """
 
-    def __init__(self, experiment_name,
+    def __init__(self, experiment_name, nb_features: int,
+                 rnn_layer_sizes: List[int],
                  # PREVIOUS DIRS
-                 nb_previous_dirs: int, prev_dirs_embedding_size: int,
-                 prev_dirs_embedding_key: str,
+                 nb_previous_dirs: int = 0,
+                 prev_dirs_embedding_size: int = None,
+                 prev_dirs_embedding_key: str = None,
                  # INPUTS
-                 nb_features: int, input_embedding_key: str,
-                 input_embedding_size: int, input_embedding_size_ratio: float,
+                 input_embedding_key: str = 'no_embedding',
+                 input_embedding_size: int = None,
+                 input_embedding_size_ratio: float = None,
                  # RNN
-                 rnn_key: str, rnn_layer_sizes: List[int],
-                 use_skip_connection: bool, use_layer_normalization: bool,
-                 dropout: float,
+                 rnn_key: str = 'lstm',
+                 use_skip_connection: bool = True,
+                 use_layer_normalization: bool = True,
+                 dropout: float = 0.,
                  # DIRECTION GETTER
-                 dg_key: str, dg_args: dict,
+                 dg_key: str = 'cosine-regression',
+                 dg_args: dict = None,
                  # Other
-                 neighborhood_type: Union[str, None],
-                 neighborhood_radius: Union[int, float, Iterable[float], None],
-                 normalize_directions: bool):
+                 neighborhood_type: str = None,
+                 neighborhood_radius: Union[int, float, Iterable[float]] = None,
+                 normalize_directions: bool = True,
+                 log_level=logging.root.level):
         """
         Params
         ------
         nb_previous_dirs: int
             Number of previous direction (i.e. [x,y,z] information) to be
             received.
+        input_size: int
+            This value should be known from the actual data. Number of features
+            in the data (last dimension).
+        rnn_layer_sizes: List[int]
+            The list of layer sizes for the rnn. The real size will depend
+            on the skip_connection parameter.
         prev_dirs_embedding_size: int
             How to transform prev_dir inputs (dimension = 3 * nb_previous_dirs)
             during embedding. Total embedding size will be nb_previous_dirs *
@@ -54,9 +69,6 @@ class Learn2TrackModel(MainModelWithPD):
         prev_dirs_embedding_key: str,
             Key to a embedding class (one of
             dwi_ml.models.embeddings_on_tensors.keys_to_embeddings)
-        input_size: int
-            This value should be known from the actual data. Number of features
-            in the data (last dimension).
         input_embedding_key: str
             Key to a embedding class (one of
             dwi_ml.models.embeddings_on_tensors.keys_to_embeddings)
@@ -67,9 +79,6 @@ class Learn2TrackModel(MainModelWithPD):
             Other possibility to define input_embedding_size, which then equals
             [ratio * (nb_features * (nb_neighbors+1))]
         rnn_key: either 'LSTM' or 'GRU'
-        rnn_layer_sizes: List[int]
-            The list of layer sizes for the rnn. The real size will depend
-            on the skip_connection parameter.
         use_skip_connection: bool
             Whether to use skip connections. See [1] (Figure 1) to visualize
             the architecture.
@@ -108,13 +117,11 @@ class Learn2TrackModel(MainModelWithPD):
         """
         super().__init__(experiment_name, nb_previous_dirs,
                          normalize_directions, neighborhood_type,
-                         neighborhood_radius)
+                         neighborhood_radius, log_level)
 
         self.prev_dirs_embedding_key = prev_dirs_embedding_key
         self.prev_dirs_embedding_size = prev_dirs_embedding_size
         self.input_embedding_key = input_embedding_key
-        self.input_embedding_size = input_embedding_size
-        self.input_embedding_size_ratio = input_embedding_size_ratio
         self.nb_features = nb_features
         self.use_skip_connection = use_skip_connection
         self.use_layer_normalization = use_layer_normalization
@@ -122,13 +129,14 @@ class Learn2TrackModel(MainModelWithPD):
         self.rnn_layer_sizes = rnn_layer_sizes
         self.dropout = dropout
         self.dg_key = dg_key
-        self.dg_args = dg_args
+        self.dg_args = dg_args or {}
 
         # 1. Previous dir embedding
         if self.nb_previous_dirs > 0:
             if prev_dirs_embedding_size is None:
                 self.prev_dirs_embedding_size = nb_previous_dirs * 3
             prev_dirs_emb_cls = keys_to_embeddings[prev_dirs_embedding_key]
+            # Preparing layer!
             self.prev_dirs_embedding = prev_dirs_emb_cls(
                 input_size=nb_previous_dirs * 3,
                 output_size=self.prev_dirs_embedding_size)
@@ -142,36 +150,38 @@ class Learn2TrackModel(MainModelWithPD):
         nb_neighbors = len(self.neighborhood_points) if \
             self.neighborhood_points else 0
         self.input_size = nb_features * (nb_neighbors + 1)
-        if not (input_embedding_size or input_embedding_size_ratio):
-            input_embedding_size = self.input_size
         if input_embedding_size and input_embedding_size_ratio:
-            raise ValueError(
-                "You must only give one value, either input_embedding_size or "
-                "input_embedding_size_ratio")
-        if input_embedding_size:
-            input_embedding_size = input_embedding_size
+            raise ValueError("You must only give one value, either "
+                             "input_embedding_size or "
+                             "input_embedding_size_ratio")
         if input_embedding_size_ratio:
-            input_embedding_size = int(self.input_size *
-                                       input_embedding_size_ratio)
+            self.input_embedding_size = int(self.input_size *
+                                            input_embedding_size_ratio)
+        elif input_embedding_size:
+            self.input_embedding_size = input_embedding_size
+        else:
+            self.input_embedding_size = self.input_size
+
+        # Preparing layer!
         input_embedding_cls = keys_to_embeddings[input_embedding_key]
         self.input_embedding = input_embedding_cls(
             input_size=self.input_size,
-            output_size=input_embedding_size)
+            output_size=self.input_embedding_size)
 
         # 3. Stacked RNN
-        rnn_input_size = input_embedding_size
+        rnn_input_size = self.input_embedding_size
         if self.nb_previous_dirs > 0:
             rnn_input_size += self.prev_dirs_embedding_size
         self.rnn_model = StackedRNN(
             rnn_key, rnn_input_size, rnn_layer_sizes,
             use_skip_connections=use_skip_connection,
-            use_layer_normalization=use_layer_normalization, dropout=dropout,
-            logger=self.logger)
+            use_layer_normalization=use_layer_normalization,
+            dropout=dropout)
 
         # 4. Direction getter
         direction_getter_cls = keys_to_direction_getters[dg_key]
         self.direction_getter = direction_getter_cls(
-            self.rnn_model.output_size, **dg_args)
+            self.rnn_model.output_size, **self.dg_args)
 
     @property
     def params_per_layer(self):
@@ -199,7 +209,6 @@ class Learn2TrackModel(MainModelWithPD):
             'input_embedding_key': self.input_embedding_key,
             'input_embedding_size': int(self.input_embedding_size) if
             self.input_embedding_size else None,
-            'input_embedding_size_ratio': self.input_embedding_size_ratio,
             'rnn_key': self.rnn_key,
             'rnn_layer_sizes': self.rnn_layer_sizes,
             'use_skip_connection': self.use_skip_connection,
@@ -212,7 +221,7 @@ class Learn2TrackModel(MainModelWithPD):
         return params
 
     def forward(self, inputs: List[torch.tensor],
-                n_prev_dirs: List[torch.tensor], device,
+                n_prev_dirs: List[torch.tensor], device=None,
                 hidden_reccurent_states: tuple = None):
         """Run the model on a batch of sequences.
 
@@ -232,9 +241,17 @@ class Learn2TrackModel(MainModelWithPD):
 
         Returns
         -------
-        model_outputs : Any
+        model_outputs : Tensor
             Output data, ready to be passed to either `compute_loss()` or
             `get_tracking_directions()`.
+            NOTE: this tensor's format will be one direction per point in the
+            input, with the same organization os the initial packed sequence.
+            It should be compared with packed_sequences's .data.
+            Or it is possible to form pack a packed sequence with
+            output = PackedSequence(output,
+                                   inputs.batch_sizes,
+                                   inputs.sorted_indices,
+                                   inputs.unsorted_indices)
         out_hidden_recurrent_states : tuple
             The last steps hidden states (h_n, C_n for LSTM) for each layer.
             Tuple containing nb_layer tuples of 2 tensors (h_n, c_n) with
@@ -253,58 +270,45 @@ class Learn2TrackModel(MainModelWithPD):
         unsorted_indices = inputs.unsorted_indices
 
         # RUNNING THE MODEL
-        self.logger.debug("================ 1. Previous dir embedding, if any "
-                          "(on packed_sequence's tensor!)...")
+        logger.debug("================ 1. Previous dir embedding, if any "
+                     "(on packed_sequence's tensor!)...")
         if n_prev_dirs is not None:  # self.nb_previous_dirs should be > 0
-            self.logger.debug(
+            logger.debug(
                 "Input size: {}".format(n_prev_dirs.data.shape[-1]))
             n_prev_dirs = self.prev_dirs_embedding(n_prev_dirs.data)
-            self.logger.debug("Output size: {}".format(n_prev_dirs.shape[-1]))
+            logger.debug("Output size: {}".format(n_prev_dirs.shape[-1]))
 
-        self.logger.debug(
+        logger.debug(
             "================ 2. Inputs embedding (on packed_sequence's "
             "tensor!)...")
-        self.logger.debug("Input size: {}".format(inputs.data.shape[-1]))
+        logger.debug("Input size: {}".format(inputs.data.shape[-1]))
         inputs = self.input_embedding(inputs.data)
-        self.logger.debug("Output size: {}".format(inputs.shape[-1]))
+        logger.debug("Output size: {}".format(inputs.shape[-1]))
 
-        self.logger.debug(
+        logger.debug(
             "================ 3. Concatenating previous dirs and inputs's "
             "embeddings")
         if n_prev_dirs is not None:
-            inputs = self._concat_prev_dirs(inputs, n_prev_dirs)
+            inputs = torch.cat((inputs, n_prev_dirs), dim=-1)
+            logger.debug("Concatenated shape: {}".format(inputs.shape))
         inputs = PackedSequence(inputs, batch_sizes, sorted_indices,
                                 unsorted_indices)
 
-        self.logger.debug("================ 4. Stacked RNN....")
+        logger.debug("================ 4. Stacked RNN....")
         rnn_output, out_hidden_recurrent_states = self.rnn_model(
             inputs, hidden_reccurent_states)
-        self.logger.debug("Output size: {}".format(rnn_output.data.shape[-1]))
+        logger.debug("Output size: {}".format(rnn_output.data.shape[-1]))
 
-        self.logger.debug("================ 5. Direction getter.")
-        model_outputs = self.direction_getter(rnn_output.data)
-        self.logger.debug("Output size: {}".format(model_outputs.shape[-1]))
+        logger.debug("================ 5. Direction getter.")
+        # direction getter can't get a list of sequences.
+        # output will be a tensor, but with same format as input.data.
+        # we will get a direction for each point.
+        model_outputs = self.direction_getter(rnn_output)
+        logger.debug("Output size: {}".format(model_outputs.shape[-1]))
 
         # Return the hidden states. Necessary for the generative
         # (tracking) part, done step by step.
         return model_outputs, out_hidden_recurrent_states
-
-    def _concat_prev_dirs(self, inputs, prev_dirs):
-        """Concatenating data depends on the data type."""
-
-        assert isinstance(inputs, torch.Tensor), "Inputs should be a tensor"
-        assert isinstance(prev_dirs, torch.Tensor), \
-            "prev_dirs should be a tensor"
-
-        self.logger.debug(
-            "Previous dir and inputs both seem to be tensors. "
-            "Concatenating if dimensions fit. Input shape: {},"
-            "Prev dir shape: {}"
-            .format(inputs.shape, prev_dirs.shape))
-        inputs = torch.cat((inputs, prev_dirs), dim=-1)
-        self.logger.debug("Concatenated shape: {}".format(inputs.shape))
-
-        return inputs
 
     def compute_loss(self, model_outputs: Any, targets: list, device):
         """

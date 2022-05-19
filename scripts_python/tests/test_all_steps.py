@@ -28,7 +28,7 @@ def test_execution_bst(script_runner):
 
     experiment_path = tmp_dir.name
     experiment_name = 'test_experiment'
-    hdf5_file= os.path.join(data_dir, 'hdf5_file.hdf5')
+    hdf5_file= os.path.join(data_dir, 'dwi_ml_ready/subjX/hdf5_file.hdf5')
     input_group_name = TEST_EXPECTED_VOLUME_GROUPS[0]
     streamline_group_name = TEST_EXPECTED_STREAMLINE_GROUPS[0]
 

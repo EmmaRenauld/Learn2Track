@@ -9,6 +9,10 @@ from torch.nn.utils.rnn import PackedSequence
 keys_to_rnn_class = {'lstm': torch.nn.LSTM,
                      'gru': torch.nn.GRU}
 
+# Note. This logger's logging level can be modified trough the main model,
+# Learn2trackModel.
+logger = logging.getLogger('model_logger')  # Same logger as main dwi_ml.
+
 
 class StackedRNN(torch.nn.Module):
     """
@@ -20,7 +24,7 @@ class StackedRNN(torch.nn.Module):
 
     def __init__(self, rnn_torch_key: str, input_size: int,
                  layer_sizes: List[int], use_skip_connections: bool,
-                 use_layer_normalization: bool, dropout: float, logger):
+                 use_layer_normalization: bool, dropout: float):
         """
         Parameters
         ----------
@@ -74,9 +78,6 @@ class StackedRNN(torch.nn.Module):
         else:
             self.dropout_module = None
         self.relu_sublayer = torch.nn.ReLU()
-
-        # Creating a logger like in main model
-        self.logger = logger
 
         # Initialize model
         rnn_cls = keys_to_rnn_class[self.rnn_torch_key]
@@ -139,13 +140,24 @@ class StackedRNN(torch.nn.Module):
         ----------
         inputs : torch.Tensor or PackedSequence
             Batch of input sequences. Size (seq, features).
+            Current implementation of the learn2track model calls this using
+            packed sequence. We run the RNN on the packed data, but the
+            normalization and dropout of their tensor version.
         hidden_states : tuple of torch.Tensor
             The current hidden states of the model ((h_(t-1), C_(t-1) for LSTM)
 
         Returns
         -------
-        last_output : Tensor or PackedSequence, depending on the input type.
-            Output of the last RNN layer.
+        last_output : Tensor
+            The results. Shape is [nb_points, last layer size], or
+            [nb_points, sum of layer sizes] if skip_connections.
+            * If inputs was a PackeSequence, you can get the packed results:
+            last_output = PackedSequence(last_output,
+                                         inputs.batch_sizes,
+                                         inputs.sorted_indices,
+                                         inputs.unsorted_indices)
+            But this can't be used in the direction getter for the next step.
+            In our case, skipping.
         out_hidden_states : tuple of Tensor
             The last step hidden states (h_(t-1), C_(t-1) for LSTM) for each
             layer.
@@ -175,44 +187,47 @@ class StackedRNN(torch.nn.Module):
         last_output = inputs
         for i, (layer_i, states_i) in enumerate(zip(self.rnn_layers,
                                                     hidden_states)):
-            self.logger.debug(
-                'Applying StackedRnn layer #{}\n'
-                '    Layer is: {}\n'
-                '    Received input size: {}.'
-                    .format(i, layer_i,
-                            [last_output.data.shape if was_packed else
-                             last_output.shape]))
+            logger.debug('Applying StackedRnn layer #{}. Layer is: {}'
+                         .format(i, layer_i))
 
-            # Apply main sub-layer: either as 3D tensor or as packedSequence
+            if i > 0 and was_packed:
+                # Packing back the output tensor from previous layer.
+                last_output = PackedSequence(last_output, inputs.batch_sizes,
+                                             inputs.sorted_indices,
+                                             inputs.unsorted_indices)
+
+            # ** RNN **
+            # Either as 3D tensor or as packedSequence
             last_output, new_state_i = layer_i(last_output, states_i)
 
+            # ** Other sub-layers **
             # Forward functions for layer_norm, dropout and skip take tensors
             # Does not matter if order of datapoints is not kept, applied on
             # each data point separately
             if was_packed:
                 last_output = last_output.data
 
-            self.logger.debug('   Output size after main sub-layer: {}'
-                              .format(last_output.shape))
+            logger.debug('   Output size after main sub-layer: {}'
+                         .format(last_output.shape))
 
             # Apply layer normalization
             if self.use_layer_normalization:
                 last_output = self.layer_norm_layers[i](last_output)
 
-            self.logger.debug('   Output size after normalization: {}'
-                              .format(last_output.shape))
+            logger.debug('   Output size after normalization: {}'
+                         .format(last_output.shape))
 
             if i < len(self.rnn_layers) - 1:
                 # Apply dropout except on last layer
                 if self.dropout > 0:
                     last_output = self.dropout_module(last_output)
-                    self.logger.debug('   Output size after dropout: {}'
-                                      .format(last_output.shape))
+                    logger.debug('   Output size after dropout: {}'
+                                 .format(last_output.shape))
 
                 # Apply ReLu activation except on last layer
                 last_output = self.relu_sublayer(last_output)
-                self.logger.debug('   Output size after reLu: {}'
-                                  .format(last_output.shape))
+                logger.debug('   Output size after reLu: {}'
+                             .format(last_output.shape))
 
             # Saving layer's last_output and states for later
             outputs.append(last_output)
@@ -224,35 +239,15 @@ class StackedRNN(torch.nn.Module):
                 # Skip connection for last layer is different and will be done
                 # outside the loop.
                 last_output = torch.cat((last_output, inputs_tensor), dim=-1)
-                self.logger.debug('   Output size after skip connection: {}'
-                                  .format(last_output.shape))
-
-            # Packing. Either for use on next layer or for returning a packed
-            # sequence.
-            if was_packed:
-                last_output = PackedSequence(last_output, inputs.batch_sizes,
-                                             inputs.sorted_indices,
-                                             inputs.unsorted_indices)
+                logger.debug('   Output size after skip connection: {}'
+                             .format(last_output.shape))
 
         # Final last_output
         if self.use_skip_connections:
-            if was_packed:
-                # Can't just replace last_output.data, throws an attribute
-                # error. Solutions: create the model as inplace (ex,
-                # torch.nn.Dropout(p=p, inplace=True)), or reconstruct a
-                # packedSequence
-                last_output = PackedSequence(torch.cat(outputs, dim=-1),
-                                             inputs.batch_sizes,
-                                             inputs.sorted_indices,
-                                             inputs.unsorted_indices)
-            else:
-                last_output = torch.cat(outputs, dim=-1)
+            last_output = torch.cat(outputs, dim=-1)
 
-            self.logger.debug(
+            logger.debug(
                 'Final skip connection: concatenating all outputs '
-                'but not input: {} = {}'
-                .format([outputs[i].shape for i in
-                         range(len(outputs))],
-                        [last_output.data.shape if was_packed else
-                         last_output.shape]))
+                'but not input. Final shape is {}'
+                .format(last_output.shape))
         return last_output, tuple(out_hidden_states)
