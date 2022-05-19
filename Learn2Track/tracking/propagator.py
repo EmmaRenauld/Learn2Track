@@ -45,21 +45,27 @@ class RecurrentPropagator(DWIMLPropagatorOneInputAndPD):
         # Must re-run the model from scratch to get the hidden states
         # Either load all timepoints in memory and call model once.
         all_inputs = []
-        all_n_previous_dirs = []
-        for i in range(len(line)):
-            # toDo
-            #  We could also prepare inputs only, and previous dirs out of loop
-            inputs, n_previous_dirs = self._prepare_inputs_at_pos(line[i])
-            all_inputs.append(inputs)
-            all_n_previous_dirs.append(n_previous_dirs[0])
+        all_n_previous_dirs = None
+        if self.model.nb_previous_dirs > 0:
+            all_n_previous_dirs = []
+
+        if self.model.nb_previous_dirs > 0:
+            for i in range(len(line)):
+                inputs, n_previous_dirs = self._prepare_inputs_at_pos(line[i])
+                all_inputs.append(inputs)
+                all_n_previous_dirs.append(n_previous_dirs[0])
+
+            # all_previous dirs is n_points x tensor([1, nb_prev_dirs * 3])
+            # creating a batch of 1 streamline with [nb_points, nb_prev * 3]
+            all_n_previous_dirs = [torch.cat(all_n_previous_dirs, dim=0)]
+        else:
+            for i in range(len(line)):
+                inputs, _ = self._prepare_inputs_at_pos(line[i])
+                all_inputs.append(inputs)
 
         # all_inputs is a lit of n_points x tensor([1, nb_features])
         # creating a batch of 1 streamline with tensor[nb_points, nb_features]
         all_inputs = [torch.cat(all_inputs, dim=0)]
-
-        # all_previous dirs n_points x tensor([1, nb_prev_dirs * 3])
-        # creating a batch of 1 streamline with tensor[nb_points, nb_prev * 3]
-        all_n_previous_dirs = [torch.cat(all_n_previous_dirs, dim=0)]
 
         # Running model
         _, self.hidden_recurrent_states = self.model(all_inputs,

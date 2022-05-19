@@ -28,29 +28,30 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
     Comet is used to save training information, but some logs will also be
     saved locally in the experiment_path.
     """
-
     def __init__(self,
+                 model: Learn2TrackModel, experiments_path: str,
+                 experiment_name: str,
                  batch_sampler_training: DWIMLBatchSampler,
-                 batch_sampler_validation: DWIMLBatchSampler,
                  batch_loader_training: BatchLoaderOneInput,
-                 batch_loader_validation: BatchLoaderOneInput,
-                 model: Learn2TrackModel, experiment_path: str,
-                 experiment_name: str, learning_rate: float,
-                 weight_decay: float, max_epochs: int,
-                 max_batches_per_epoch: int, patience: int,
-                 nb_cpu_processes: int, taskman_managed: bool, use_gpu: bool,
-                 comet_workspace: str, comet_project: str,
-                 from_checkpoint: bool, clip_grad: float):
+                 batch_sampler_validation: DWIMLBatchSampler = None,
+                 batch_loader_validation: BatchLoaderOneInput = None,
+                 learning_rate: float = 0.001,
+                 weight_decay: float = 0.01, max_epochs: int = 10,
+                 max_batches_per_epoch: int = 1000, patience: int = None,
+                 nb_cpu_processes: int = 0, taskman_managed: bool = False,
+                 use_gpu: bool = False, comet_workspace: str = None,
+                 comet_project: str = None, from_checkpoint: bool = False,
+                 clip_grad: float = 0):
         """ Init trainer
 
         Additionnal values compared to super:
         clip_grad : float
             The value to which to clip gradients after the backward pass.
-            There is no good value here.
+            There is no good value here. Default: 1000.
         """
-        super().__init__(batch_sampler_training, batch_sampler_validation,
-                         batch_loader_training, batch_loader_validation,
-                         model, experiment_path, experiment_name,
+        super().__init__(model, experiments_path, experiment_name,
+                         batch_sampler_training, batch_loader_training,
+                         batch_sampler_validation, batch_loader_validation,
                          learning_rate, weight_decay, max_epochs,
                          max_batches_per_epoch, patience, nb_cpu_processes,
                          taskman_managed, use_gpu, comet_workspace,
@@ -88,11 +89,11 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
 
     @classmethod
     def init_from_checkpoint(
-            cls, train_batch_sampler: DWIMLBatchSampler,
-            valid_batch_sampler: DWIMLBatchSampler,
+            cls, model: Learn2TrackModel, experiments_path, experiment_name,
+            train_batch_sampler: DWIMLBatchSampler,
             train_batch_loader: BatchLoaderOneInput,
+            valid_batch_sampler: DWIMLBatchSampler,
             valid_batch_loader: BatchLoaderOneInput,
-            model: Learn2TrackModel,
             checkpoint_state: dict, new_patience, new_max_epochs):
         """
         During save_checkpoint(), checkpoint_state.pkl is saved. Loading it
@@ -102,8 +103,9 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
 
         # Use super's method but return this learn2track trainer as 'cls'.
         experiment = super(cls, cls).init_from_checkpoint(
-            train_batch_sampler, valid_batch_sampler,
-            train_batch_loader, valid_batch_loader, model,
+            model, experiments_path, experiment_name,
+            train_batch_sampler, train_batch_loader,
+            valid_batch_sampler, valid_batch_loader,
             checkpoint_state, new_patience, new_max_epochs)
 
         return experiment
@@ -238,7 +240,8 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
 
         # Not keeping the last point: only useful to get the last direction
         # (last target), but won't be used as an input.
-        n_prev_dirs = [s[:-1] for s in n_prev_dirs]
+        if n_prev_dirs is not None:
+            n_prev_dirs = [s[:-1] for s in n_prev_dirs]
 
         try:
             # Apply model. This calls our model's forward function

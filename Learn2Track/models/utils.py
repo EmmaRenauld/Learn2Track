@@ -102,7 +102,7 @@ def prepare_model(args, dg_args):
             use_layer_normalization=args.use_layer_normalization,
             use_skip_connection=args.use_skip_connection,
             # DIRECTION GETTER
-            direction_getter_key=args.direction_getter_key, dg_args=dg_args,
+            dg_key=args.dg_key, dg_args=dg_args,
             # Other
             normalize_directions=args.normalize_directions,
             neighborhood_type=args.neighborhood_type,
