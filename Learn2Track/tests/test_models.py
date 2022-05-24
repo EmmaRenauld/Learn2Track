@@ -1,13 +1,8 @@
 # -*- coding: utf-8 -*-
 import logging
 
-import numpy as np
 import torch
 from torch.nn.utils.rnn import pack_sequence
-
-from dwi_ml.data.processing.streamlines.post_processing import \
-    compute_and_normalize_directions
-from dwi_ml.data.packed_sequences import unpack_sequence
 
 from Learn2Track.models.learn2track_model import Learn2TrackModel
 from Learn2Track.models.stacked_rnn import StackedRNN

@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 import logging
-from typing import Any, Union, List, Iterable
+from typing import Any, Union, List
 
 import torch
-from dwi_ml.data.packed_sequences import unpack_sequence
 from torch.nn.utils.rnn import PackedSequence, pack_sequence
 
 from dwi_ml.models.direction_getter_models import keys_to_direction_getters
@@ -42,11 +41,10 @@ class Learn2TrackModel(MainModelWithPD):
                  use_layer_normalization: bool = True,
                  dropout: float = 0.,
                  # DIRECTION GETTER
-                 dg_key: str = 'cosine-regression',
-                 dg_args: dict = None,
+                 dg_key: str = 'cosine-regression', dg_args: dict = None,
                  # Other
                  neighborhood_type: str = None,
-                 neighborhood_radius: Union[int, float, Iterable[float]] = None,
+                 neighborhood_radius: Union[int, float, List[float]] = None,
                  normalize_directions: bool = True,
                  log_level=logging.root.level):
         """
