@@ -50,12 +50,16 @@ class Learn2TrackModel(MainModelWithPD):
         """
         Params
         ------
-        nb_previous_dirs: int
-            Number of previous direction (i.e. [x,y,z] information) to be
-            received.
+        experiment_name: str
         nb_features: int
             This value should be known from the actual data. Number of features
             in the data (last dimension).
+        rnn_layer_sizes: List[int]
+            The list of layer sizes for the rnn. The real size will depend
+            on the skip_connection parameter.
+        nb_previous_dirs: int
+            Number of previous direction (i.e. [x,y,z] information) to be
+            received.
         nb_previous_dirs: int
             Number of previous direction to concatenate to each input.
             Default: 0.
@@ -79,9 +83,6 @@ class Learn2TrackModel(MainModelWithPD):
             [ratio * (nb_features * (nb_neighbors+1))]
         rnn_key: str
             Either 'LSTM' or 'GRU'.
-        rnn_layer_sizes: List[int]
-            The list of layer sizes for the rnn. The real size will depend
-            on the skip_connection parameter.
         use_skip_connection: bool
             Whether to use skip connections. See [1] (Figure 1) to visualize
             the architecture.
@@ -231,6 +232,9 @@ class Learn2TrackModel(MainModelWithPD):
         device: torch device
         hidden_reccurent_states : tuple
             The current hidden states of the (stacked) RNN model.
+        return_state: bool
+            If true, return new hidden recurrent state together with the model
+            outputs.
 
         Returns
         -------
