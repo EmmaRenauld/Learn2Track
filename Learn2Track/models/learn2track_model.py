@@ -216,7 +216,8 @@ class Learn2TrackModel(MainModelWithPD):
 
     def forward(self, inputs: List[torch.tensor],
                 streamlines: List[torch.tensor], device=None,
-                hidden_reccurent_states: tuple = None):
+                hidden_reccurent_states: tuple = None,
+                return_state: bool = False):
         """Run the model on a batch of sequences.
 
         Parameters
@@ -253,8 +254,8 @@ class Learn2TrackModel(MainModelWithPD):
             # Apply model. This calls our model's forward function
             # (the hidden states are not used here, neither as input nor
             # outputs. We need them only during tracking).
-            model_outputs, _ = self._run_forward(inputs, streamlines, device,
-                                                 hidden_reccurent_states)
+            model_outputs, new_states = self._run_forward(
+                inputs, streamlines, device, hidden_reccurent_states)
         except RuntimeError:
             # Training RNNs with variable-length sequences on the GPU can
             # cause memory fragmentation in the pytorch-managed cache,
@@ -264,12 +265,15 @@ class Learn2TrackModel(MainModelWithPD):
             # consuming.
             # Todo : ADDED BY PHILIPPE. SEE IF THERE ARE STILL ERRORS?
             torch.cuda.empty_cache()
-            model_outputs, _ = self._run_forward(inputs, streamlines, device,
-                                                 hidden_reccurent_states)
+            model_outputs, new_states = self._run_forward(
+                inputs, streamlines, device, hidden_reccurent_states)
 
-        # Returning the directions too, to be re-used in compute_loss
-        # later instead of computing them twice.
-        return model_outputs
+        if return_state:
+            # Tracking
+            return model_outputs, new_states
+        else:
+            # Training
+            return model_outputs
 
     def _run_forward(self, inputs: List[torch.tensor],
                      streamlines: List[torch.tensor], device=None,

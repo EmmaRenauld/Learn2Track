@@ -56,8 +56,7 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
 
         # toDo Can be accelerated?
         for i in range(len(line)):
-            inputs, _ = self._prepare_inputs_at_pos(line[i])
-            all_inputs.append(inputs)
+            all_inputs.append(self._prepare_inputs_at_pos(line[i]))
 
         # all_inputs is a list of n_points x tensor([1, nb_features])
         # creating a batch of 1 streamline with tensor[nb_points, nb_features]
@@ -65,7 +64,8 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
 
         # Running model
         _, self.hidden_recurrent_states = self.model(all_inputs, line,
-                                                     self.device)
+                                                     self.device,
+                                                     return_state=True)
         logging.debug("Done.")
 
     def _update_state_after_propagation_step(self, new_pos, new_dir):
@@ -99,12 +99,15 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
         # one-shot.
         inputs = self._prepare_inputs_at_pos(pos)
 
+        logging.debug("Learn2track propagation step. Inputs: {}".format(inputs))
+
         # Sending [inputs] to simulate a batch to be packed.
         # Sending line's last 2 points, to compute one direction.
         model_outputs, hidden_states = self.model([inputs],
                                                   [self.line[-2: -1]],
                                                   self.device,
-                                                  self.hidden_recurrent_states)
+                                                  self.hidden_recurrent_states,
+                                                  return_state=True)
 
         if get_state_only:
             return hidden_states

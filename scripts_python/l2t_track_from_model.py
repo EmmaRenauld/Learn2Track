@@ -150,6 +150,7 @@ def prepare_tracker(parser, args, hdf_handle, device,
 
         logging.info("Loading model.")
         model = Learn2TrackModel.load(args.experiment_path + '/model')
+        model.set_logger_state(args.logging.upper())
         logging.info("* Loaded params: " + format_dict_to_str(model.params)
                      + "\n")
         logging.info("* Formatted model: " +
@@ -303,7 +304,8 @@ def main():
 
     sft = StatefulTractogram(streamlines, ref, Space.VOXMM,
                              data_per_streamline=data_per_streamline)
-    save_tractogram(sft, args.out_tractogram)
+    save_tractogram(sft, args.out_tractogram,
+                    bbox_valid_check=False)
 
 
 if __name__ == "__main__":

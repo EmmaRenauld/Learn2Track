@@ -55,7 +55,7 @@ def test_execution_bst(script_runner):
     out_tractogram = os.path.join(tmp_dir.name, 'test_tractogram.trk')
     ret = script_runner.run(
         'l2t_track_from_model.py', whole_experiment_path, out_tractogram,
-        'det', '--nt', '2',
+        'det', '--nt', '2', '--logging', 'debug',
         '--sm_from_hdf5', TEST_EXPECTED_VOLUME_GROUPS[1],
         '--tm_from_hdf5', TEST_EXPECTED_VOLUME_GROUPS[1],
         '--input_from_hdf5', TEST_EXPECTED_VOLUME_GROUPS[0],
