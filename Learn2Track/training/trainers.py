@@ -45,9 +45,11 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
             The value to which to clip gradients after the backward pass.
             There is no good value here. Default: 1000.
         """
+        model_uses_streamlines = True
         super().__init__(model, experiments_path, experiment_name,
                          batch_sampler_training, batch_loader_training,
                          batch_sampler_validation, batch_loader_validation,
+                         model_uses_streamlines,
                          learning_rate, weight_decay, max_epochs,
                          max_batches_per_epoch, patience, nb_cpu_processes,
                          taskman_managed, use_gpu, comet_workspace,
@@ -105,53 +107,6 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
     # _save_log_from_array         same as user
     # load_params_from_checkpoint  same as user
     # check_early_stopping         same as user
-
-    def run_model(self, batch_inputs, batch_streamlines):
-        dirs = self.model.format_directions(batch_streamlines, self.device)
-
-        # Formatting the previous dirs for all points.
-        n_prev_dirs = self.model.format_previous_dirs(dirs, self.device)
-
-        # Not keeping the last point: only useful to get the last direction
-        # (last target), but won't be used as an input.
-        if n_prev_dirs is not None:
-            n_prev_dirs = [s[:-1] for s in n_prev_dirs]
-
-        try:
-            # Apply model. This calls our model's forward function
-            # (the hidden states are not used here, neither as input nor
-            # outputs. We need them only during tracking).
-            model_outputs, _ = self.model(batch_inputs, n_prev_dirs,
-                                          self.device)
-        except RuntimeError:
-            # Training RNNs with variable-length sequences on the GPU can
-            # cause memory fragmentation in the pytorch-managed cache,
-            # possibly leading to "random" OOM RuntimeError during
-            # training. Emptying the GPU cache seems to fix the problem for
-            # now. We don't do it every update because it can be time
-            # consuming.
-            torch.cuda.empty_cache()
-            model_outputs, _ = self.model(batch_inputs, n_prev_dirs,
-                                          self.device)
-
-        # Returning the directions too, to be re-used in compute_loss
-        # later instead of computing them twice.
-        return model_outputs, dirs
-
-    def compute_loss(self, run_model_output_tuple, _):
-        # In theory to do like super, 2nd parameters, targets, would contain
-        # the batch streamlines and we would do:
-        # directions, packed_directions = self.model.format_directions(
-        #             batch_streamlines)
-        # Choice 2: As this was already computed when running run_model
-        # the formatted targets are returned with the model outputs.
-        # 2nd params becomes unused.
-        model_outputs, targets = run_model_output_tuple
-
-        # Compute loss using model.compute_loss (as in super)
-        mean_loss = self.model.compute_loss(model_outputs, targets,
-                                            self.device)
-        return mean_loss
 
     def fix_parameters(self):
         """

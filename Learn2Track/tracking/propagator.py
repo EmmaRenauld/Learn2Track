@@ -5,10 +5,10 @@ import numpy as np
 import torch
 from dwi_ml.data.dataset.single_subject_containers import SubjectDataAbstract
 from dwi_ml.models.main_models import MainModelAbstract
-from dwi_ml.tracking.propagator import DWIMLPropagatorOneInputAndPD
+from dwi_ml.tracking.propagator import DWIMLPropagatorOneInput
 
 
-class RecurrentPropagator(DWIMLPropagatorOneInputAndPD):
+class RecurrentPropagator(DWIMLPropagatorOneInput):
     """
     To use a RNN for a generative process, the hidden recurrent states that
     would be passed (ex, h_(t-1), C_(t-1) for LSTM) need to be kept in memory
@@ -22,9 +22,10 @@ class RecurrentPropagator(DWIMLPropagatorOneInputAndPD):
                  input_volume_group: str, neighborhood_points: np.ndarray,
                  step_size: float, rk_order: int, algo: str, theta: float,
                  device=None):
+        model_uses_streamlines = True
         super().__init__(dataset, model, input_volume_group,
                          neighborhood_points, step_size, rk_order, algo, theta,
-                         device)
+                         model_uses_streamlines, device)
 
         # Internal state:
         # - previous_dirs, already dealt with by super.
@@ -36,40 +37,34 @@ class RecurrentPropagator(DWIMLPropagatorOneInputAndPD):
         self.hidden_recurrent_states = None
 
     def _reverse_memory_state(self, line):
-        # Reverse the streamlines
+        """
+        Prepare memory state for the backward pass. Anything your model needs
+        to deal with in memory during streamline generation (ex, memory of the
+        previous directions).
+
+        Line: Already reversed line (streamline from the forward tracking).
+        """
         super()._reverse_memory_state(line)
 
+        # Reverse the streamlines
         logging.debug("Computing hidden RNN state at backward: recomputing "
                       "whole sequence to run model.")
 
         # Must re-run the model from scratch to get the hidden states
         # Either load all timepoints in memory and call model once.
         all_inputs = []
-        all_n_previous_dirs = None
-        if self.model.nb_previous_dirs > 0:
-            all_n_previous_dirs = []
 
-        if self.model.nb_previous_dirs > 0:
-            for i in range(len(line)):
-                inputs, n_previous_dirs = self._prepare_inputs_at_pos(line[i])
-                all_inputs.append(inputs)
-                all_n_previous_dirs.append(n_previous_dirs[0])
+        # toDo Can be accelerated?
+        for i in range(len(line)):
+            inputs, _ = self._prepare_inputs_at_pos(line[i])
+            all_inputs.append(inputs)
 
-            # all_previous dirs is n_points x tensor([1, nb_prev_dirs * 3])
-            # creating a batch of 1 streamline with [nb_points, nb_prev * 3]
-            all_n_previous_dirs = [torch.cat(all_n_previous_dirs, dim=0)]
-        else:
-            for i in range(len(line)):
-                inputs, _ = self._prepare_inputs_at_pos(line[i])
-                all_inputs.append(inputs)
-
-        # all_inputs is a lit of n_points x tensor([1, nb_features])
+        # all_inputs is a list of n_points x tensor([1, nb_features])
         # creating a batch of 1 streamline with tensor[nb_points, nb_features]
         all_inputs = [torch.cat(all_inputs, dim=0)]
 
         # Running model
-        _, self.hidden_recurrent_states = self.model(all_inputs,
-                                                     all_n_previous_dirs,
+        _, self.hidden_recurrent_states = self.model(all_inputs, line,
                                                      self.device)
         logging.debug("Done.")
 
@@ -96,16 +91,18 @@ class RecurrentPropagator(DWIMLPropagatorOneInputAndPD):
         get_state_only: bool
             If true, returns the hidden RNN states instead of the model output.
         """
-        # Sending [inputs] simulate a batch of inputs to be packed.
+        # Recurrent memory managed through the hidden state: no need to send
+        # the whole streamline again.
+
         # Shape: [1, nb_features] --> only the current point, contrary to
         # during training, where the whole streamline is read and sent,
         # one-shot.
-        inputs, n_prev_dirs = self._prepare_inputs_at_pos(pos)
+        inputs = self._prepare_inputs_at_pos(pos)
 
-        # Sending inputs to lists to simulate a batch to be packed.
-        # n_previous_dirs is already a list of 1.
-        inputs = [inputs]
-        model_outputs, hidden_states = self.model(inputs, n_prev_dirs,
+        # Sending [inputs] to simulate a batch to be packed.
+        # Sending line's last 2 points, to compute one direction.
+        model_outputs, hidden_states = self.model([inputs],
+                                                  [self.line[-2: -1]],
                                                   self.device,
                                                   self.hidden_recurrent_states)
 
