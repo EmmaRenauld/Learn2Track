@@ -254,12 +254,13 @@ class Learn2TrackModel(MainModelWithPD):
             Tuple containing nb_layer tuples of 2 tensors (h_n, c_n) with
             shape(h_n) = shape(c_n) = [1, nb_streamlines, layer_output_size]
         """
+        self.model.to(device)
         try:
             # Apply model. This calls our model's forward function
             # (the hidden states are not used here, neither as input nor
             # outputs. We need them only during tracking).
             model_outputs, new_states = self._run_forward(
-                inputs, streamlines, device, hidden_reccurent_states)
+                inputs, streamlines, hidden_reccurent_states)
         except RuntimeError:
             # Training RNNs with variable-length sequences on the GPU can
             # cause memory fragmentation in the pytorch-managed cache,
@@ -270,7 +271,7 @@ class Learn2TrackModel(MainModelWithPD):
             # Todo : ADDED BY PHILIPPE. SEE IF THERE ARE STILL ERRORS?
             torch.cuda.empty_cache()
             model_outputs, new_states = self._run_forward(
-                inputs, streamlines, device, hidden_reccurent_states)
+                inputs, streamlines, hidden_reccurent_states)
 
         if return_state:
             # Tracking
@@ -280,11 +281,11 @@ class Learn2TrackModel(MainModelWithPD):
             return model_outputs
 
     def _run_forward(self, inputs: List[torch.tensor],
-                     streamlines: List[torch.tensor], device=None,
+                     streamlines: List[torch.tensor],
                      hidden_reccurent_states: tuple = None):
 
         # Packing inputs and saving info
-        inputs = pack_sequence(inputs, enforce_sorted=False).to(device)
+        inputs = pack_sequence(inputs, enforce_sorted=False).to(self.device)
         batch_sizes = inputs.batch_sizes
         sorted_indices = inputs.sorted_indices
         unsorted_indices = inputs.unsorted_indices
@@ -292,8 +293,9 @@ class Learn2TrackModel(MainModelWithPD):
         # RUNNING THE MODEL
         logger.debug("*** 1. Previous dir embedding, if any "
                      "(on packed_sequence's tensor!)...")
+        dirs = self.format_directions(streamlines)
         n_prev_dirs_embedded = super().run_prev_dirs_embedding_layer(
-            streamlines, device, unpack_results=False)
+            dirs, unpack_results=False).to(self.device)
 
         logger.debug("*** 2. Inputs embedding (on packed_sequence's "
                      "tensor!)...")
@@ -352,7 +354,7 @@ class Learn2TrackModel(MainModelWithPD):
         # already computed when calling the forward method. We could try to
         # prevent double calculations, but a little complicated in actual class
         # structure.
-        targets = self.format_directions(targets, device)
+        targets = self.format_directions(targets)
 
         # Packing dirs and using the .data
         targets = pack_sequence(targets, enforce_sorted=False).data.to(device)
