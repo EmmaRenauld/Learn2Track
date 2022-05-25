@@ -216,7 +216,7 @@ class Learn2TrackModel(MainModelWithPD):
         return params
 
     def forward(self, inputs: List[torch.tensor],
-                streamlines: List[torch.tensor], device=None,
+                streamlines: List[torch.tensor],
                 hidden_reccurent_states: tuple = None,
                 return_state: bool = False):
         """Run the model on a batch of sequences.
@@ -229,7 +229,6 @@ class Learn2TrackModel(MainModelWithPD):
             [nb_points, nb_features].
         streamlines: List[torch.tensor],
             Batch of streamlines.
-        device: torch device
         hidden_reccurent_states : tuple
             The current hidden states of the (stacked) RNN model.
         return_state: bool
@@ -254,7 +253,6 @@ class Learn2TrackModel(MainModelWithPD):
             Tuple containing nb_layer tuples of 2 tensors (h_n, c_n) with
             shape(h_n) = shape(c_n) = [1, nb_streamlines, layer_output_size]
         """
-        self.model.to(device)
         try:
             # Apply model. This calls our model's forward function
             # (the hidden states are not used here, neither as input nor
@@ -294,8 +292,8 @@ class Learn2TrackModel(MainModelWithPD):
         logger.debug("*** 1. Previous dir embedding, if any "
                      "(on packed_sequence's tensor!)...")
         dirs = self.format_directions(streamlines)
-        n_prev_dirs_embedded = super().run_prev_dirs_embedding_layer(
-            dirs, unpack_results=False).to(self.device)
+        n_prev_dirs_embedded = self.compute_and_embed_previous_dirs(
+            dirs, unpack_results=False)
 
         logger.debug("*** 2. Inputs embedding (on packed_sequence's "
                      "tensor!)...")
