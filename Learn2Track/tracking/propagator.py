@@ -103,11 +103,9 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
 
         # Sending [inputs] to simulate a batch to be packed.
         # Sending line's last 2 points, to compute one direction.
-        model_outputs, hidden_states = self.model([inputs],
-                                                  [self.line[-2: -1]],
-                                                  self.device,
-                                                  self.hidden_recurrent_states,
-                                                  return_state=True)
+        model_outputs, hidden_states = self.model(
+            [inputs], [torch.tensor(self.line[-2: -1])],
+            self.hidden_recurrent_states, return_state=True)
 
         if get_state_only:
             return hidden_states
