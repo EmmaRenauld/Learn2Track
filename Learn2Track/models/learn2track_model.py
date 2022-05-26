@@ -121,7 +121,7 @@ class Learn2TrackModel(MainModelWithPD):
         [2] https://arxiv.org/pdf/1607.06450.pdf
         """
         super().__init__(experiment_name, nb_previous_dirs,
-                         prev_dirs_embedding_key, prev_dirs_embedding_size,
+                         prev_dirs_embedding_size, prev_dirs_embedding_key,
                          normalize_directions, neighborhood_type,
                          neighborhood_radius, log_level)
 
@@ -292,8 +292,14 @@ class Learn2TrackModel(MainModelWithPD):
         logger.debug("*** 1. Previous dir embedding, if any "
                      "(on packed_sequence's tensor!)...")
         dirs = self.format_directions(streamlines)
+        if hidden_reccurent_states is not None:
+            # Currently tracking. We only need the last point's previous dirs
+            point_idx = -1
+        else:
+            # Currently training. We need all the previous directions.
+            point_idx = None
         n_prev_dirs_embedded = self.compute_and_embed_previous_dirs(
-            dirs, unpack_results=False)
+            dirs, unpack_results=False, point_idx=point_idx)
 
         logger.debug("*** 2. Inputs embedding (on packed_sequence's "
                      "tensor!)...")

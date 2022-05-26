@@ -20,13 +20,12 @@ import torch
 from scilpy.image.datasets import DataVolume
 from scilpy.io.utils import (add_sphere_arg,
                              assert_inputs_exist, assert_outputs_exist,
-                             verify_compression_th, add_processes_arg)
+                             verify_compression_th)
 from scilpy.tracking.utils import (add_seeding_options,
                                    verify_streamline_length_options,
                                    verify_seed_options, add_out_options)
 
 from dwi_ml.data.dataset.single_subject_containers import SubjectData
-from dwi_ml.data.dataset.mri_data_containers import MRIData
 from dwi_ml.experiment_utils.prints import format_dict_to_str
 from dwi_ml.experiment_utils.timer import Timer
 from dwi_ml.tracking.seed import DWIMLSeedGenerator

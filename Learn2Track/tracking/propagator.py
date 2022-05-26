@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 import logging
 
-import numpy as np
 import torch
 from dwi_ml.data.dataset.single_subject_containers import SubjectDataAbstract
 from dwi_ml.models.main_models import MainModelAbstract
 from dwi_ml.tracking.propagator import DWIMLPropagatorOneInput
+
+logger = logging.getLogger('tracker_logger')
 
 
 class RecurrentPropagator(DWIMLPropagatorOneInput):
@@ -32,7 +33,7 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
         self.hidden_recurrent_states = None
 
     def _reset_memory_state(self):
-        super()._reset_memory_state()
+        logger.debug("Learn2track: Resetting propagator for new streamline.")
         self.hidden_recurrent_states = None
 
     def _reverse_memory_state(self, line):
@@ -43,11 +44,9 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
 
         Line: Already reversed line (streamline from the forward tracking).
         """
-        super()._reverse_memory_state(line)
-
         # Reverse the streamlines
-        logging.debug("Computing hidden RNN state at backward: recomputing "
-                      "whole sequence to run model.")
+        logger.debug("Computing hidden RNN state at backward: recomputing "
+                     "whole sequence to run model.")
 
         # Must re-run the model from scratch to get the hidden states
         # Either load all timepoints in memory and call model once.
@@ -65,7 +64,7 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
         _, self.hidden_recurrent_states = self.model(all_inputs, line,
                                                      self.device,
                                                      return_state=True)
-        logging.debug("Done.")
+        logger.debug("Done.")
 
     def _update_state_after_propagation_step(self, new_pos, new_dir):
         # First re-run the model with final new_dir to get final hidden states
@@ -98,13 +97,15 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
         # one-shot.
         inputs = self._prepare_inputs_at_pos(pos)
 
-        logging.debug("Learn2track propagation step. Inputs: {}".format(inputs))
-
-        # Sending [inputs] to simulate a batch to be packed.
-        # Sending line's last 2 points, to compute one direction.
+        # Sending [inputs], [line] to simulate a batch to be packed.
+        # During training, we have one more point then the number of
+        # inputs: the last point is only used to get the direction.
+        # Adding a fake last point.
+        logger.debug("        Line as of now: {}".format(self.line))
+        logger.debug("        Current input: {}".format(inputs))
+        line = torch.tensor(self.line + [[0., 0., 0.]])
         model_outputs, hidden_states = self.model(
-            [inputs], [torch.tensor(self.line[-2: -1])],
-            self.hidden_recurrent_states, return_state=True)
+            [inputs], [line], self.hidden_recurrent_states, return_state=True)
 
         if get_state_only:
             return hidden_states

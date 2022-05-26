@@ -41,7 +41,8 @@ def test_execution_bst(script_runner):
                             '--max_epochs', '1', '--batch_size', '5',
                             '--batch_size_units', 'nb_streamlines',
                             '--max_batches_per_epoch', '5',
-                            '--logging', 'INFO')
+                            '--logging', 'INFO',
+                            '--nb_previous_dirs', '1')
     assert ret.success
 
     logging.info("************ TESTING RESUMING FROM CHECKPOINT ************")
