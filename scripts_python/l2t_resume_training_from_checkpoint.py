@@ -3,9 +3,7 @@
 import argparse
 import logging
 import os
-from os import path
 
-from Learn2Track.models.utils import prepare_model
 from dwi_ml.data.dataset.utils import prepare_multisubjectdataset
 from dwi_ml.experiment_utils.timer import Timer
 from dwi_ml.training.utils.batch_loaders import \
@@ -112,8 +110,8 @@ def main():
     logging.basicConfig(level=logging_level)
 
     # Verify if a checkpoint has been saved. Else create an experiment.
-    if not path.exists(os.path.join(args.experiments_path, args.experiment_name,
-                                    "checkpoint")):
+    if not os.path.exists(os.path.join(
+            args.experiments_path, args.experiment_name, "checkpoint")):
         raise FileNotFoundError("Experiment not found.")
 
     trainer = init_from_checkpoint(args)
