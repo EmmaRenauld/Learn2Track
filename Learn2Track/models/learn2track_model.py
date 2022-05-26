@@ -325,7 +325,7 @@ class Learn2TrackModel(MainModelWithPD):
         # (tracking) part, done step by step.
         return model_outputs, out_hidden_recurrent_states
 
-    def compute_loss(self, model_outputs: Any, targets: list, device):
+    def compute_loss(self, model_outputs: Any, streamlines: list):
         """
         Computes the loss function using the provided outputs and targets.
         Returns the mean loss (loss averaged across timesteps and sequences).
@@ -338,9 +338,8 @@ class Learn2TrackModel(MainModelWithPD):
             cosine regression direction getter return a simple Tensor. Please
             make sure that the chosen direction_getter's output size fits with
             the target ou the target's data if it's a PackedSequence.
-        targets : List
+        streamlines : List
             The target values for the batch (the streamlines).
-        device: torch device
 
         Returns
         -------
@@ -352,13 +351,14 @@ class Learn2TrackModel(MainModelWithPD):
         # already computed when calling the forward method. We could try to
         # prevent double calculations, but a little complicated in actual class
         # structure.
-        targets = self.format_directions(targets)
+        targets = self.format_directions(streamlines)
 
         # Packing dirs and using the .data
-        targets = pack_sequence(targets, enforce_sorted=False).data.to(device)
+        targets = pack_sequence(targets, enforce_sorted=False).data
 
         # Computing loss
-        mean_loss = self.direction_getter.compute_loss(model_outputs, targets)
+        mean_loss = self.direction_getter.compute_loss(
+            model_outputs.to(self.device), targets.to(self.device))
 
         return mean_loss
 
