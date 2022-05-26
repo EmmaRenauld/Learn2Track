@@ -19,12 +19,11 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
     from scratch. We will reload them all when starting backward, if necessary.
     """
     def __init__(self, dataset: SubjectDataAbstract, model: MainModelAbstract,
-                 input_volume_group: str, neighborhood_points: np.ndarray,
-                 step_size: float, rk_order: int, algo: str, theta: float,
-                 device=None):
+                 input_volume_group: str, step_size: float, rk_order: int,
+                 algo: str, theta: float, device=None):
         model_uses_streamlines = True
         super().__init__(dataset, model, input_volume_group,
-                         neighborhood_points, step_size, rk_order, algo, theta,
+                         step_size, rk_order, algo, theta,
                          model_uses_streamlines, device)
 
         # Internal state:
