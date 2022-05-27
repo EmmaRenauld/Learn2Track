@@ -41,7 +41,8 @@ def test_execution_bst(script_runner):
                             '--max_epochs', '1', '--batch_size', '5',
                             '--batch_size_units', 'nb_streamlines',
                             '--max_batches_per_epoch', '5',
-                            '--logging', 'INFO')
+                            '--logging', 'INFO',
+                            '--nb_previous_dirs', '1')
     assert ret.success
 
     logging.info("************ TESTING RESUMING FROM CHECKPOINT ************")
@@ -53,12 +54,14 @@ def test_execution_bst(script_runner):
     logging.info("************ TESTING TRACKING FROM MODEL ************")
     whole_experiment_path = os.path.join(experiment_path, experiment_name)
     out_tractogram = os.path.join(tmp_dir.name, 'test_tractogram.trk')
+
+    seeding_mask_group = TEST_EXPECTED_VOLUME_GROUPS[1]
+    tracking_mask_group = TEST_EXPECTED_VOLUME_GROUPS[1]
+    input_group = TEST_EXPECTED_VOLUME_GROUPS[0]
+    subj_id = TEST_EXPECTED_SUBJ_NAMES[0]
     ret = script_runner.run(
-        'l2t_track_from_model.py', whole_experiment_path, out_tractogram,
-        'det', '--nt', '2', '--logging', 'debug',
-        '--sm_from_hdf5', TEST_EXPECTED_VOLUME_GROUPS[1],
-        '--tm_from_hdf5', TEST_EXPECTED_VOLUME_GROUPS[1],
-        '--input_from_hdf5', TEST_EXPECTED_VOLUME_GROUPS[0],
-        '--hdf5_file', hdf5_file, '--subj_id', TEST_EXPECTED_SUBJ_NAMES[0])
+        'l2t_track_from_model.py', whole_experiment_path, hdf5_file, subj_id,
+        out_tractogram, seeding_mask_group, tracking_mask_group, input_group,
+        '--algo', 'det', '--nt', '2', '--rk_order', '1', '--logging', 'debug')
 
     assert ret.success

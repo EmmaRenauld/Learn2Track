@@ -121,7 +121,7 @@ class Learn2TrackModel(MainModelWithPD):
         [2] https://arxiv.org/pdf/1607.06450.pdf
         """
         super().__init__(experiment_name, nb_previous_dirs,
-                         prev_dirs_embedding_key, prev_dirs_embedding_size,
+                         prev_dirs_embedding_size, prev_dirs_embedding_key,
                          normalize_directions, neighborhood_type,
                          neighborhood_radius, log_level)
 
@@ -218,7 +218,7 @@ class Learn2TrackModel(MainModelWithPD):
     def forward(self, inputs: List[torch.tensor],
                 streamlines: List[torch.tensor],
                 hidden_reccurent_states: tuple = None,
-                return_state: bool = False):
+                return_state: bool = False, is_tracking: bool = False):
         """Run the model on a batch of sequences.
 
         Parameters
@@ -234,6 +234,12 @@ class Learn2TrackModel(MainModelWithPD):
         return_state: bool
             If true, return new hidden recurrent state together with the model
             outputs.
+        is_tracking: bool
+            If False, streamlines contains one more point than inputs, as their
+            point does not have a target (a direction). Else, while tracking,
+            streamlines have the same number of points as inputs (we do not use
+            the targets, so it's ok, we only need to compute the previous
+            dirs).
 
         Returns
         -------
@@ -258,7 +264,7 @@ class Learn2TrackModel(MainModelWithPD):
             # (the hidden states are not used here, neither as input nor
             # outputs. We need them only during tracking).
             model_outputs, new_states = self._run_forward(
-                inputs, streamlines, hidden_reccurent_states)
+                inputs, streamlines, hidden_reccurent_states, is_tracking)
         except RuntimeError:
             # Training RNNs with variable-length sequences on the GPU can
             # cause memory fragmentation in the pytorch-managed cache,
@@ -269,7 +275,7 @@ class Learn2TrackModel(MainModelWithPD):
             # Todo : ADDED BY PHILIPPE. SEE IF THERE ARE STILL ERRORS?
             torch.cuda.empty_cache()
             model_outputs, new_states = self._run_forward(
-                inputs, streamlines, hidden_reccurent_states)
+                inputs, streamlines, hidden_reccurent_states, is_tracking)
 
         if return_state:
             # Tracking
@@ -280,7 +286,7 @@ class Learn2TrackModel(MainModelWithPD):
 
     def _run_forward(self, inputs: List[torch.tensor],
                      streamlines: List[torch.tensor],
-                     hidden_reccurent_states: tuple = None):
+                     hidden_reccurent_states, is_tracking):
 
         # Packing inputs and saving info
         inputs = pack_sequence(inputs, enforce_sorted=False).to(self.device)
@@ -292,8 +298,13 @@ class Learn2TrackModel(MainModelWithPD):
         logger.debug("*** 1. Previous dir embedding, if any "
                      "(on packed_sequence's tensor!)...")
         dirs = self.format_directions(streamlines)
+        if is_tracking:
+            point_idx = -1
+        else:
+            # Currently training. We need all the previous directions.
+            point_idx = None
         n_prev_dirs_embedded = self.compute_and_embed_previous_dirs(
-            dirs, unpack_results=False)
+            dirs, unpack_results=False, point_idx=point_idx)
 
         logger.debug("*** 2. Inputs embedding (on packed_sequence's "
                      "tensor!)...")
