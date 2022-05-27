@@ -62,6 +62,6 @@ def test_execution_bst(script_runner):
     ret = script_runner.run(
         'l2t_track_from_model.py', whole_experiment_path, hdf5_file, subj_id,
         out_tractogram, seeding_mask_group, tracking_mask_group, input_group,
-        '--algo', 'det', '--nt', '2', '--logging', 'debug')
+        '--algo', 'det', '--nt', '2', '--rk_order', '1', '--logging', 'debug')
 
     assert ret.success
