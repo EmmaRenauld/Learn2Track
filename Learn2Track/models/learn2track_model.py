@@ -272,6 +272,8 @@ class Learn2TrackModel(MainModelWithPD):
             # training. Emptying the GPU cache seems to fix the problem for
             # now. We don't do it every update because it can be time
             # consuming.
+            # If it fails again, try closing terminal and opening new one to
+            # empty cache better.
             # Todo : ADDED BY PHILIPPE. SEE IF THERE ARE STILL ERRORS?
             torch.cuda.empty_cache()
             model_outputs, new_states = self._run_forward(

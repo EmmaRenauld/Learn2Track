@@ -3,7 +3,7 @@ import logging
 
 import numpy as np
 import torch
-from dwi_ml.data.dataset.single_subject_containers import SubjectDataAbstract
+from dwi_ml.data.dataset.multi_subject_containers import MultisubjectSubset
 from dwi_ml.models.main_models import MainModelAbstract
 from dwi_ml.tracking.propagator import DWIMLPropagatorOneInput
 
@@ -20,11 +20,12 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
     for the backward tracking: the hidden recurrent states need to be computed
     from scratch. We will reload them all when starting backward, if necessary.
     """
-    def __init__(self, dataset: SubjectDataAbstract, model: MainModelAbstract,
-                 input_volume_group: str, step_size: float, rk_order: int,
+    def __init__(self, dataset: MultisubjectSubset, subj_idx: int,
+                 model: MainModelAbstract, input_volume_group: str,
+                 step_size: float, rk_order: int,
                  algo: str, theta: float, device=None):
         model_uses_streamlines = True
-        super().__init__(dataset, model, input_volume_group,
+        super().__init__(dataset, subj_idx, model, input_volume_group,
                          step_size, rk_order, algo, theta,
                          model_uses_streamlines, device)
 
@@ -97,7 +98,6 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
 
         # Also, warning: creating a tensor from a list of np arrays is low.
         fake_line = torch.tensor(np.vstack(fake_line))
-        self.is_backward = True
         _, self.hidden_recurrent_states = self.model(
             [all_inputs], [fake_line], return_state=True)
         logger.debug("Done.")
@@ -125,7 +125,7 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
         # During training, we have one more point then the number of
         # inputs: the last point is only used to get the direction.
         # Adding a fake last point that won't be used.
-        line = torch.tensor(self.line)
+        line = torch.tensor(np.vstack(self.line))
 
         model_outputs, hidden_states = self.model(
             [inputs], [line], self.hidden_recurrent_states, return_state=True,

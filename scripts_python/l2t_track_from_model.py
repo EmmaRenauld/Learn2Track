@@ -16,6 +16,8 @@ import h5py
 import nibabel as nib
 import numpy as np
 import torch
+from dwi_ml.data.dataset.multi_subject_containers import MultiSubjectDataset
+from dwi_ml.data.dataset.utils import add_dataset_args
 
 from scilpy.image.datasets import DataVolume
 from scilpy.io.utils import (add_sphere_arg,
@@ -25,8 +27,7 @@ from scilpy.tracking.utils import (add_seeding_options,
                                    verify_streamline_length_options,
                                    verify_seed_options, add_out_options)
 
-from dwi_ml.data.dataset.single_subject_containers import SubjectData
-from dwi_ml.experiment_utils.prints import format_dict_to_str
+from dwi_ml.experiment_utils.prints import format_dict_to_str, add_logging_arg
 from dwi_ml.experiment_utils.timer import Timer
 from dwi_ml.tracking.seed import DWIMLSeedGenerator
 from dwi_ml.tracking.tracker import DWIMLTracker
@@ -48,20 +49,21 @@ def build_argparser():
     # Sphere used if the direction_getter key is the sphere-classification.
     add_sphere_arg(track_g, symmetric_only=False)
 
+    add_dataset_args(p)
+
     # As in scilpy:
     add_seeding_options(p)
     add_out_options(p)
 
-    p.add_argument('--logging', metavar='level',
-                   choices=['info', 'debug', 'warning'], default='info',
-                   help="Logging level. One of 'debug', 'info' or 'warning'.")
+    add_logging_arg(p)
 
     return p
 
 
-def prepare_tracker(parser, args, hdf_handle, device,
-                    min_nbr_pts, max_nbr_pts, max_invalid_dirs,
-                    mmap_mode):
+def prepare_tracker(parser, args, hdf5_file, device,
+                    min_nbr_pts, max_nbr_pts, max_invalid_dirs):
+    hdf_handle = h5py.File(hdf5_file, 'r')
+
     with Timer("\n\nPreparing everything...",
                newline=True, color='cyan'):
         logging.info("Loading seeding mask + preparing seed generator.")
@@ -72,12 +74,34 @@ def prepare_tracker(parser, args, hdf_handle, device,
         mask, ref = _prepare_tracking_mask(args, hdf_handle)
 
         logging.info("Loading subject's data.")
-        subj_data = SubjectData.init_from_hdf(args.subj_id, hdf_handle,
-                                              group_info=None)
+        # Right now, we con only track on one subject at the time. We could
+        # instantiate a LazySubjectData directly but we want to use the cache
+        # manager.
+        dataset = MultiSubjectDataset(hdf5_file, lazy=args.lazy,
+                                      subset_cache_size=args.cache_size,
+                                      log_level=logging.INFO)
+        if args.subset == 'testing':
+            # Most logical choice.
+            dataset.load_data(load_training=False, load_validation=False)
+            subset = dataset.testing_set
+        elif args.subset == 'training':
+            dataset.load_data(load_validation=False, load_testing=False)
+            subset = dataset.training_set
+        elif args.subset == 'validation':
+            dataset.load_data(load_training=False, load_testing=False)
+            subset = dataset.validation_set
+        else:
+            raise ValueError("Subset must be one of 'training', 'validation' "
+                             "or 'testing.")
+
+        if args.subj_id not in subset.subjects:
+            raise ValueError("Subject {} does not belong in hdf5's {} set."
+                             .format(args.subj_id, args.subset))
+        subj_idx = subset.subjects.index(args.subj_id)
 
         logging.info("Loading model.")
         model = Learn2TrackModel.load(args.experiment_path + '/model')
-        model.set_logger_state(args.logging.upper())
+        model.set_logger_state(logging.INFO)
         logging.info("* Loaded params: " + format_dict_to_str(model.params)
                      + "\n")
         logging.info("* Formatted model: " +
@@ -86,21 +110,15 @@ def prepare_tracker(parser, args, hdf_handle, device,
         logging.debug("Instantiating propagator.")
         theta = gm.math.radians(args.theta)
         propagator = RecurrentPropagator(
-            subj_data, model, args.input_group, args.step_size, args.rk_order,
-            args.algo, theta, device)
+            subset, subj_idx, model, args.input_group, args.step_size,
+            args.rk_order, args.algo, theta, device)
 
         logging.debug("Instantiating tracker.")
-        if args.nbr_processes > 1:
-            # toDo
-            raise NotImplementedError(
-                "Usage with --processes>1 not ready in dwi_ml! "
-                "See the #toDo in scilpy! It uses tracking_field.dataset.data "
-                "which does not exist in our case!")
         tracker = DWIMLTracker(
             propagator, mask, seed_generator, nbr_seeds, min_nbr_pts,
             max_nbr_pts, max_invalid_dirs, args.compress, args.nbr_processes,
-            args.save_seeds, mmap_mode, args.rng_seed, args.track_forward_only,
-            args.use_gpu)
+            args.save_seeds, args.rng_seed, args.track_forward_only,
+            simultanenous_tracking=args.use_gpu)
 
     return tracker, ref
 
@@ -163,10 +181,6 @@ def main():
     min_nbr_pts = int(args.min_length / args.step_size) + 1
     max_invalid_dirs = int(math.ceil(args.max_invalid_len / args.step_size))
 
-    # r+ is necessary for interpolation function in cython who need read/write
-    # rights
-    mmap_mode = None if args.set_mmap_to_none else 'r+'
-
     device = torch.device('cpu')
     if args.use_gpu:
         if args.nbr_processes > 1:
@@ -176,11 +190,8 @@ def main():
         if torch.cuda.is_available():
             device = torch.device('cuda')
 
-    hdf_handle = h5py.File(args.hdf5_file, 'r')
-
-    tracker, ref = prepare_tracker(parser, args, hdf_handle, device,
-                                   min_nbr_pts, max_nbr_pts, max_invalid_dirs,
-                                   mmap_mode)
+    tracker, ref = prepare_tracker(parser, args, args.hdf5_file, device,
+                                   min_nbr_pts, max_nbr_pts, max_invalid_dirs)
 
     # ----- Track
 
