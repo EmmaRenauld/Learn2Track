@@ -59,15 +59,15 @@ def init_from_checkpoint(args):
     # toDo Verify that valid dataset is the same.
     #  checkpoint_state['valid_data_params']
 
-    # Prepare model
-    model = Learn2TrackModel.load(os.path.join(args.experiments_path,
-                                               args.experiment_name,
-                                               'checkpoint/model'))
-
     # Setting log level to INFO maximum for sub-loggers, else it become ugly
     sub_loggers_level = args.logging
     if args.logging == 'DEBUG':
         sub_loggers_level = 'INFO'
+
+    # Prepare model
+    model = Learn2TrackModel.load(os.path.join(
+        args.experiments_path, args.experiment_name, 'checkpoint/model'),
+                                  sub_loggers_level)
 
     # Prepare batch samplers
     args_ts = argparse.Namespace(**checkpoint_state['train_sampler_params'])

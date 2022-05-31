@@ -16,8 +16,6 @@ import h5py
 import nibabel as nib
 import numpy as np
 import torch
-from dwi_ml.data.dataset.multi_subject_containers import MultiSubjectDataset
-from dwi_ml.data.dataset.utils import add_dataset_args
 
 from scilpy.image.datasets import DataVolume
 from scilpy.io.utils import (add_sphere_arg,
@@ -27,12 +25,14 @@ from scilpy.tracking.utils import (add_seeding_options,
                                    verify_streamline_length_options,
                                    verify_seed_options, add_out_options)
 
+from dwi_ml.data.dataset.utils import add_dataset_args
 from dwi_ml.experiment_utils.prints import format_dict_to_str, add_logging_arg
 from dwi_ml.experiment_utils.timer import Timer
 from dwi_ml.tracking.seed import DWIMLSeedGenerator
 from dwi_ml.tracking.tracker import DWIMLTracker
 from dwi_ml.tracking.utils import (add_mandatory_options_tracking,
-                                   add_tracking_options)
+                                   add_tracking_options,
+                                   prepare_dataset_for_tracking)
 
 from Learn2Track.models.learn2track_model import Learn2TrackModel
 from Learn2Track.tracking.propagator import RecurrentPropagator
@@ -74,34 +74,11 @@ def prepare_tracker(parser, args, hdf5_file, device,
         mask, ref = _prepare_tracking_mask(args, hdf_handle)
 
         logging.info("Loading subject's data.")
-        # Right now, we con only track on one subject at the time. We could
-        # instantiate a LazySubjectData directly but we want to use the cache
-        # manager.
-        dataset = MultiSubjectDataset(hdf5_file, lazy=args.lazy,
-                                      subset_cache_size=args.cache_size,
-                                      log_level=logging.INFO)
-        if args.subset == 'testing':
-            # Most logical choice.
-            dataset.load_data(load_training=False, load_validation=False)
-            subset = dataset.testing_set
-        elif args.subset == 'training':
-            dataset.load_data(load_validation=False, load_testing=False)
-            subset = dataset.training_set
-        elif args.subset == 'validation':
-            dataset.load_data(load_training=False, load_testing=False)
-            subset = dataset.validation_set
-        else:
-            raise ValueError("Subset must be one of 'training', 'validation' "
-                             "or 'testing.")
-
-        if args.subj_id not in subset.subjects:
-            raise ValueError("Subject {} does not belong in hdf5's {} set."
-                             .format(args.subj_id, args.subset))
-        subj_idx = subset.subjects.index(args.subj_id)
+        subset, subj_idx = prepare_dataset_for_tracking(hdf5_file, args)
 
         logging.info("Loading model.")
-        model = Learn2TrackModel.load(args.experiment_path + '/model')
-        model.set_logger_state(logging.INFO)
+        model = Learn2TrackModel.load(args.experiment_path + '/model',
+                                      logging.INFO)
         logging.info("* Loaded params: " + format_dict_to_str(model.params)
                      + "\n")
         logging.info("* Formatted model: " +
@@ -162,9 +139,12 @@ def main():
     parser = build_argparser()
     args = parser.parse_args()
 
-    # Setting root logger to high level but we will set trainer's logger to
-    # user-defined level.
-    logging.basicConfig(level=logging.WARNING)
+    # Setting root logger to high level to max info, not debug, prints way too
+    # much stuff. (but we can set our tracker's logger to debug)
+    root_level = args.logging
+    if root_level == logging.DEBUG:
+        root_level = logging.INFO
+    logging.basicConfig(level=root_level)
 
     # ----- Checks
     if not nib.streamlines.is_supported(args.out_tractogram):

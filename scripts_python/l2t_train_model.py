@@ -8,13 +8,12 @@ import argparse
 import logging
 import os
 
-from dwi_ml.experiment_utils.prints import format_dict_to_str
-from dwi_ml.experiment_utils.timer import Timer
 from scilpy.io.utils import assert_inputs_exist, assert_outputs_exist
 
 from dwi_ml.data.dataset.utils import (
     add_dataset_args, prepare_multisubjectdataset)
-from dwi_ml.experiment_utils.prints import add_logging_arg
+from dwi_ml.experiment_utils.prints import add_logging_arg, format_dict_to_str
+from dwi_ml.experiment_utils.timer import Timer
 from dwi_ml.models.utils.direction_getters import (
     add_direction_getter_args, check_args_direction_getter)
 from dwi_ml.training.utils.batch_samplers import (
@@ -50,9 +49,11 @@ def prepare_arg_parser():
     return p
 
 
-def init_from_args(args):
+def init_from_args(args, sub_loggers_level):
+
     # Prepare the dataset
-    dataset = prepare_multisubjectdataset(args, load_testing=False)
+    dataset = prepare_multisubjectdataset(args, load_testing=False,
+                                          log_level=sub_loggers_level)
 
     # Preparing the model
 
@@ -75,11 +76,6 @@ def init_from_args(args):
     args.nb_features = dataset.nb_features[input_group_idx]
     # Final model
     model = prepare_model(args, dg_args)
-
-    # Setting log level to INFO maximum for sub-loggers, else it become ugly
-    sub_loggers_level = args.logging
-    if args.logging == 'DEBUG':
-        sub_loggers_level = 'INFO'
 
     # Preparing the batch samplers
     args.wait_for_gpu = args.use_gpu
@@ -119,8 +115,12 @@ def main():
     p = prepare_arg_parser()
     args = p.parse_args()
 
-    # Setting root logger with high level but we will set trainer to
-    # user-defined level.
+    # Setting log level to INFO maximum for sub-loggers, else it become ugly
+    # but we will set trainer to user-defined level.
+    sub_loggers_level = args.logging
+    if args.logging == 'DEBUG':
+        sub_loggers_level = 'INFO'
+
     logging.basicConfig(level=logging.WARNING)
 
     # Check that all files exist
@@ -133,7 +133,7 @@ def main():
         raise FileExistsError("This experiment already exists. Delete or use "
                               "script l2t_resume_training_from_checkpoint.py.")
 
-    trainer = init_from_args(args)
+    trainer = init_from_args(args, sub_loggers_level)
 
     run_experiment(trainer, args.logging)
 
