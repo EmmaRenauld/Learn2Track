@@ -118,7 +118,7 @@ def prepare_tracker(parser, args, hdf5_file, device,
             propagator, mask, seed_generator, nbr_seeds, min_nbr_pts,
             max_nbr_pts, max_invalid_dirs, args.compress, args.nbr_processes,
             args.save_seeds, args.rng_seed, args.track_forward_only,
-            simultanenous_tracking=args.use_gpu)
+            simultanenous_tracking=args.use_gpu, log_level=args.logging)
 
     return tracker, ref
 
@@ -162,7 +162,9 @@ def main():
     parser = build_argparser()
     args = parser.parse_args()
 
-    logging.basicConfig(level=args.logging.upper())
+    # Setting root logger to high level but we will set trainer's logger to
+    # user-defined level.
+    logging.basicConfig(level=logging.WARNING)
 
     # ----- Checks
     if not nib.streamlines.is_supported(args.out_tractogram):

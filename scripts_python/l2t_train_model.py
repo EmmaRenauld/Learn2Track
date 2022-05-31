@@ -14,6 +14,7 @@ from scilpy.io.utils import assert_inputs_exist, assert_outputs_exist
 
 from dwi_ml.data.dataset.utils import (
     add_dataset_args, prepare_multisubjectdataset)
+from dwi_ml.experiment_utils.prints import add_logging_arg
 from dwi_ml.models.utils.direction_getters import (
     add_direction_getter_args, check_args_direction_getter)
 from dwi_ml.training.utils.batch_samplers import (
@@ -22,8 +23,7 @@ from dwi_ml.training.utils.batch_loaders import (
     add_args_batch_loader, prepare_batchloadersoneinput_train_valid)
 from dwi_ml.training.utils.experiment import (
     add_mandatory_args_training_experiment,
-    add_memory_args_training_experiment,
-    add_printing_args_training_experiment)
+    add_memory_args_training_experiment)
 from dwi_ml.training.utils.trainer import run_experiment
 
 from Learn2Track.models.utils import add_model_args, prepare_model
@@ -35,7 +35,6 @@ def prepare_arg_parser():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawTextHelpFormatter)
     add_mandatory_args_training_experiment(p)
-    add_printing_args_training_experiment(p)
     add_memory_args_training_experiment(p)
     add_dataset_args(p)
     add_args_batch_sampler(p)
@@ -45,6 +44,8 @@ def prepare_arg_parser():
     # Specific to Learn2track:
     add_model_args(p)
     add_direction_getter_args(p)
+
+    add_logging_arg(p)
 
     return p
 
@@ -76,8 +77,8 @@ def init_from_args(args):
     model = prepare_model(args, dg_args)
 
     # Setting log level to INFO maximum for sub-loggers, else it become ugly
-    sub_loggers_level = args.logging_choice
-    if args.logging_choice == 'DEBUG':
+    sub_loggers_level = args.logging
+    if args.logging == 'DEBUG':
         sub_loggers_level = 'INFO'
 
     # Preparing the batch samplers
@@ -107,9 +108,8 @@ def init_from_args(args):
             patience=args.patience, from_checkpoint=False,
             weight_decay=args.weight_decay, clip_grad=args.clip_grad,
             # MEMORY
-            # toDo check this
-            nb_cpu_processes=args.processes,
-            taskman_managed=args.taskman_managed, use_gpu=args.use_gpu)
+            nb_cpu_processes=args.processes, use_gpu=args.use_gpu,
+            log_level=args.logging)
         logging.info("Trainer params : " + format_dict_to_str(trainer.params))
 
     return trainer
@@ -119,10 +119,9 @@ def main():
     p = prepare_arg_parser()
     args = p.parse_args()
 
-    # Initialize logger for preparation (loading data, model, experiment)
-    # If 'as_much_as_possible', we will modify the logging level when starting
-    # the training, else very ugly
-    logging.basicConfig(level=args.logging_choice)
+    # Setting root logger with high level but we will set trainer to
+    # user-defined level.
+    logging.basicConfig(level=logging.WARNING)
 
     # Check that all files exist
     assert_inputs_exist(p, [args.hdf5_file])
@@ -136,7 +135,7 @@ def main():
 
     trainer = init_from_args(args)
 
-    run_experiment(trainer, args.logging_choice)
+    run_experiment(trainer, args.logging)
 
 
 if __name__ == '__main__':
