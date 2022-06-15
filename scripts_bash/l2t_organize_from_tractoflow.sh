@@ -92,30 +92,37 @@ do
     mkdir $dwi_ml_folder/$subjid/tractograms
 
     # dwi/dwi:
+    echo "  File: dwi_resampled"
     if [ ! -f $tractoflow_folder/$subjid/Resample_DWI/${subjid}__dwi_resampled.nii.gz ]; then echo "Subject's DWI not found"; exit 1; fi
     ln -s $tractoflow_folder/$subjid/Resample_DWI/${subjid}__dwi_resampled.nii.gz $dwi_ml_folder/$subjid/dwi/dwi.nii.gz
 
     # dwi/fodf:
+    echo "  File: fodf"
     if [ ! -f $tractoflow_folder/$subjid/FODF_Metrics/${subjid}__fodf.nii.gz ]; then echo "Subject's FODF not found"; exit 1; fi
     ln -s $tractoflow_folder/$subjid/FODF_Metrics/${subjid}__fodf.nii.gz $dwi_ml_folder/$subjid/dwi/fodf.nii.gz
 
     # dwi/bval
+    echo "  File: bval"
     if [ ! -f $tractoflow_folder/$subjid/Eddy/${subjid}__bval_eddy ]; then echo "Subject's bval not found"; exit 1; fi
     ln -s $tractoflow_folder/$subjid/Eddy/${subjid}__bval_eddy $dwi_ml_folder/$subjid/dwi/bval
 
     # dwi/bvec
+    echo "  File: bvec"
     if [ ! -f $tractoflow_folder/$subjid/Eddy/${subjid}__dwi_eddy_corrected.bvec ]; then echo "Subject's bvec not found"; exit 1; fi
     ln -s $tractoflow_folder/$subjid/Eddy/${subjid}__dwi_eddy_corrected.bvec $dwi_ml_folder/$subjid/dwi/bvec.bvec
 
     # dwi/FA
+    echo "  File: fa"
     if [ ! -f $tractoflow_folder/$subjid/DTI_Metrics/${subjid}__fa.nii.gz ]; then echo "Subject's FA not found"; exit 1; fi
     ln -s $tractoflow_folder/$subjid/DTI_Metrics/${subjid}__fa.nii.gz $dwi_ml_folder/$subjid/dwi/fa.nii.gz
 
     # anat/T1:
+    echo "  File: t1"
     if [ ! -f $tractoflow_folder/$subjid/Register_T1/${subjid}__t1_warped.nii.gz ]; then echo "Subject's T1 not found"; exit 1; fi
     ln -s $tractoflow_folder/$subjid/Register_T1/${subjid}__t1_warped.nii.gz $dwi_ml_folder/$subjid/anat/t1.nii.gz
 
     # mask/wm
+    echo "  File: wm"
     if [ ! -f $tractoflow_folder/$subjid/Segment_Tissues/${subjid}__map_wm.nii.gz ]; then echo "Subject's WM map not found"; exit 1; fi
     ln -s $tractoflow_folder/$subjid/Segment_Tissues/${subjid}__map_wm.nii.gz $dwi_ml_folder/$subjid/masks/wm.nii.gz
 

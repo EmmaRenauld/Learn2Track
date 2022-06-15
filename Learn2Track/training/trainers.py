@@ -50,6 +50,8 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
             There is no good value here. Default: 1000.
         """
         model_uses_streamlines = True
+        self.clip_grad = clip_grad
+
         super().__init__(model, experiments_path, experiment_name,
                          batch_sampler_training, batch_loader_training,
                          batch_sampler_validation, batch_loader_validation,
@@ -58,8 +60,6 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
                          max_batches_per_epoch, patience, nb_cpu_processes,
                          use_gpu, comet_workspace, comet_project,
                          from_checkpoint, log_level)
-
-        self.clip_grad = clip_grad
 
     @property
     def params_for_checkpoint(self):
@@ -106,8 +106,8 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
 
         return experiment
 
-    def _prepare_checkpoint_state(self) -> dict:
-        checkpoint_state = super()._prepare_checkpoint_state()
+    def _prepare_checkpoint_info(self) -> dict:
+        checkpoint_state = super()._prepare_checkpoint_info()
         checkpoint_state['params_for_init'].update({
             'clip_grad': self.clip_grad
         })
