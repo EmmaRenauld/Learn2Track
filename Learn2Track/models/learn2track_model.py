@@ -181,23 +181,24 @@ class Learn2TrackModel(MainModelWithPD):
             self.rnn_model.output_size, **self.dg_args)
 
     @property
-    def params_per_layer(self):
-        params = {
+    def params_for_json_prints(self):
+        params = self.params_for_checkpoint
+        params.update({
             'prev_dirs_embedding':
                 self.prev_dirs_embedding.params if
                 self.prev_dirs_embedding else None,
             'input_embedding': self.input_embedding.params,
             'rnn_model': self.rnn_model.params,
             'direction_getter': self.direction_getter.params
-        }
+        })
         return params
 
     @property
-    def params(self):
+    def params_for_checkpoint(self):
         # Every parameter necessary to build the different layers again.
         # during checkpoint state saving.
 
-        params = super().params
+        params = super().params_for_checkpoint
 
         params.update({
             'nb_features': int(self.nb_features),

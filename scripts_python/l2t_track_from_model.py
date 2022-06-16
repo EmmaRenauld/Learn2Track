@@ -84,10 +84,8 @@ def prepare_tracker(parser, args, hdf5_file, device,
         logging.info("Loading model.")
         model = Learn2TrackModel.load(args.experiment_path + '/model',
                                       log_level=sub_logger_level)
-        logging.info("* Loaded params: " + format_dict_to_str(model.params)
-                     + "\n")
         logging.info("* Formatted model: " +
-                     format_dict_to_str(model.params_per_layer))
+                     format_dict_to_str(model.params_for_json_prints))
 
         logging.debug("Instantiating propagator.")
         theta = gm.math.radians(args.theta)
