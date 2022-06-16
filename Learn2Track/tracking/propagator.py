@@ -52,7 +52,8 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
         tracking_info: None
             No initial tracking information necessary for the propagation.
         """
-        logger.debug("Learn2track: Resetting propagator for new streamline.")
+        logger.debug("Learn2track: Resetting propagator for new "
+                     "streamline(s).")
         self.hidden_recurrent_states = None
 
         return super().prepare_forward(seeding_pos)
@@ -103,7 +104,7 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
         # Running model. If we send is_tracking=True, will only compute the
         # previous dirs for the last point. To mimic training, we have to
         # add an additional fake point to the streamline, not used.
-        lines = [torch.cat((torch.tensor(line),
+        lines = [torch.cat((torch.tensor(np.vstack(line)),
                             torch.zeros(1, 3)), dim=0)
                  for line in lines]
 
@@ -129,7 +130,11 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
         # In super, they add an additional point to mimic training. Here we
         # have already managed it in the forward by sending is_tracking.
         # Converting lines to tensors
-        lines = [torch.tensor(np.vstack(line)) for line in self.current_lines]
+
+        # Todo. This is not perfect yet. Sending data to new device at each new
+        #  point. Could it already be a tensor in memory?
+        lines = [torch.tensor(np.vstack(line)).to(self.device) for line in
+                 self.current_lines]
 
         # For RNN however, we need to send the hidden state too.
         model_outputs, hidden_states = self.model(

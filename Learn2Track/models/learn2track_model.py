@@ -378,7 +378,10 @@ class Learn2TrackModel(MainModelWithPD):
     def get_tracking_direction_det(self, model_outputs):
         next_dir = self.direction_getter.get_tracking_direction_det(
             model_outputs)
-        next_dir = next_dir.detach().numpy().squeeze()
+
+        # todo. Need to avoid the .cpu() if possible. See propagator's todo.
+        # Bring back to cpu and get dir.
+        next_dir = next_dir.cpu().detach().numpy().squeeze()
         return next_dir
 
     def sample_tracking_direction_prob(self, model_outputs):

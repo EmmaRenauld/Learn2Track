@@ -64,8 +64,13 @@ def prepare_tracker(parser, args, hdf5_file, device,
                     min_nbr_pts, max_nbr_pts, max_invalid_dirs):
     hdf_handle = h5py.File(hdf5_file, 'r')
 
-    with Timer("\n\nPreparing everything...",
-               newline=True, color='cyan'):
+    sub_logger_level = args.logging.upper()
+    if sub_logger_level == 'DEBUG':
+        # make them info max
+        sub_logger_level = 'INFO'
+
+    with Timer("\nLoading data and preparing tracker...",
+               newline=True, color='green'):
         logging.info("Loading seeding mask + preparing seed generator.")
         seed_generator, nbr_seeds = _prepare_seed_generator(parser, args,
                                                             hdf_handle, device)
@@ -78,7 +83,7 @@ def prepare_tracker(parser, args, hdf5_file, device,
 
         logging.info("Loading model.")
         model = Learn2TrackModel.load(args.experiment_path + '/model',
-                                      logging.INFO)
+                                      log_level=sub_logger_level)
         logging.info("* Loaded params: " + format_dict_to_str(model.params)
                      + "\n")
         logging.info("* Formatted model: " +
@@ -95,7 +100,9 @@ def prepare_tracker(parser, args, hdf5_file, device,
             propagator, mask, seed_generator, nbr_seeds, min_nbr_pts,
             max_nbr_pts, max_invalid_dirs, args.compress, args.nbr_processes,
             args.save_seeds, args.rng_seed, args.track_forward_only,
-            simultanenous_tracking=args.use_gpu, log_level=args.logging)
+            use_gpu=args.use_gpu,
+            simultanenous_tracking=args.simultaneous_tracking,
+            log_level=args.logging)
 
     return tracker, ref
 
