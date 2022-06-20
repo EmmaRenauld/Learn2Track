@@ -111,5 +111,5 @@ def prepare_model(args, dg_args):
         # logging.info("Learn2track model user-defined parameters: \n" +
         #              format_dict_to_str(model.params) + '\n')
         logging.info("Learn2track model final parameters:" +
-                     format_dict_to_str(model.params_per_layer))
+                     format_dict_to_str(model.params_for_json_prints))
     return model

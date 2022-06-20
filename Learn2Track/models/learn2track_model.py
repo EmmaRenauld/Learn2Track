@@ -181,23 +181,24 @@ class Learn2TrackModel(MainModelWithPD):
             self.rnn_model.output_size, **self.dg_args)
 
     @property
-    def params_per_layer(self):
-        params = {
+    def params_for_json_prints(self):
+        params = self.params_for_checkpoint
+        params.update({
             'prev_dirs_embedding':
                 self.prev_dirs_embedding.params if
                 self.prev_dirs_embedding else None,
             'input_embedding': self.input_embedding.params,
             'rnn_model': self.rnn_model.params,
             'direction_getter': self.direction_getter.params
-        }
+        })
         return params
 
     @property
-    def params(self):
+    def params_for_checkpoint(self):
         # Every parameter necessary to build the different layers again.
         # during checkpoint state saving.
 
-        params = super().params
+        params = super().params_for_checkpoint
 
         params.update({
             'nb_features': int(self.nb_features),
@@ -272,6 +273,8 @@ class Learn2TrackModel(MainModelWithPD):
             # training. Emptying the GPU cache seems to fix the problem for
             # now. We don't do it every update because it can be time
             # consuming.
+            # If it fails again, try closing terminal and opening new one to
+            # empty cache better.
             # Todo : ADDED BY PHILIPPE. SEE IF THERE ARE STILL ERRORS?
             torch.cuda.empty_cache()
             model_outputs, new_states = self._run_forward(
@@ -376,7 +379,10 @@ class Learn2TrackModel(MainModelWithPD):
     def get_tracking_direction_det(self, model_outputs):
         next_dir = self.direction_getter.get_tracking_direction_det(
             model_outputs)
-        next_dir = next_dir.detach().numpy().squeeze()
+
+        # todo. Need to avoid the .cpu() if possible. See propagator's todo.
+        # Bring back to cpu and get dir.
+        next_dir = next_dir.cpu().detach().numpy().squeeze()
         return next_dir
 
     def sample_tracking_direction_prob(self, model_outputs):
