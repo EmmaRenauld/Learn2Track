@@ -1,1 +1,2 @@
 git+https://github.com/scilus/scilpy.git@master#egg=scilpy
+git+https://github.com/scil-vital/dwi_ml.git@master#egg=dwi_ml
