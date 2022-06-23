@@ -24,7 +24,7 @@ def test_help_option(script_runner):
     assert ret.success
 
 
-def test_execution_bst(script_runner):
+def test_execution_training_tracking(script_runner):
     os.chdir(os.path.expanduser(tmp_dir.name))
 
     experiment_path = tmp_dir.name
@@ -39,9 +39,11 @@ def test_execution_bst(script_runner):
     ret = script_runner.run('l2t_train_model.py',
                             experiment_path, experiment_name, hdf5_file,
                             input_group_name, streamline_group_name,
-                            '--max_epochs', '1', '--batch_size', '5',
+                            '--max_epochs', '1', '--batch_size_training', '5',
+                            '--batch_size_validation', '5',
                             '--batch_size_units', 'nb_streamlines',
-                            '--max_batches_per_epoch', '5',
+                            '--max_batches_per_epoch_training', '5',
+                            '--max_batches_per_epoch_validation', '4',
                             '--logging', 'INFO',
                             '--nb_previous_dirs', '1')
     assert ret.success
