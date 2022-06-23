@@ -4,11 +4,12 @@ author: Philippe Poulin (philippe.poulin2@usherbrooke.ca),
         refactored by Emmanuelle Renauld
 """
 import logging
+from typing import Union
 
 import torch
 
-from dwi_ml.training.batch_samplers import DWIMLBatchSampler
-from dwi_ml.training.batch_loaders import BatchLoaderOneInput
+from dwi_ml.training.batch_samplers import DWIMLBatchIDSampler
+from dwi_ml.training.batch_loaders import DWIMLBatchLoaderOneInput
 from dwi_ml.training.trainers import DWIMLTrainerOneInput
 
 from Learn2Track.models.learn2track_model import Learn2TrackModel
@@ -17,32 +18,26 @@ logger = logging.getLogger('trainer_logger')
 
 
 class Learn2TrackTrainer(DWIMLTrainerOneInput):
-    """Trainer for Learn2Track.
-
-    This Trainer class's train() method:
-        - Creates DataLoaders from the batch_samplers. Collate_fn will be the
-        sampler.load_batch() method, and the dataset will be
-        sampler.source_data.
-        - Trains each epoch by using compte_batch_loss.
-
-    Comet is used to save training information, but some logs will also be
-    saved locally in the experiment_path.
+    """
+    Trainer for Learn2Track. Nearly the same as in dwi_ml, but we add the
+    clip_grad parameter to avoid exploding gradients, typical in RNN.
     """
     def __init__(self,
                  model: Learn2TrackModel, experiments_path: str,
                  experiment_name: str,
-                 batch_sampler_training: DWIMLBatchSampler,
-                 batch_loader_training: BatchLoaderOneInput,
-                 batch_sampler_validation: DWIMLBatchSampler = None,
-                 batch_loader_validation: BatchLoaderOneInput = None,
+                 batch_sampler: DWIMLBatchIDSampler,
+                 batch_loader: DWIMLBatchLoaderOneInput,
                  learning_rate: float = 0.001,
                  weight_decay: float = 0.01, max_epochs: int = 10,
-                 max_batches_per_epoch: int = 1000, patience: int = None,
+                 max_batches_per_epoch_training: int = 1000,
+                 max_batches_per_epoch_validation: Union[int, None] = 1000,
+                 patience: int = None,
                  nb_cpu_processes: int = 0, use_gpu: bool = False,
                  comet_workspace: str = None, comet_project: str = None,
                  from_checkpoint: bool = False, clip_grad: float = 0,
                  log_level=logging.WARNING):
-        """ Init trainer
+        """
+        Init trainer.
 
         Additionnal values compared to super:
         clip_grad : float
@@ -53,13 +48,13 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
         self.clip_grad = clip_grad
 
         super().__init__(model, experiments_path, experiment_name,
-                         batch_sampler_training, batch_loader_training,
-                         batch_sampler_validation, batch_loader_validation,
-                         model_uses_streamlines,
+                         batch_sampler, batch_loader, model_uses_streamlines,
                          learning_rate, weight_decay, max_epochs,
-                         max_batches_per_epoch, patience, nb_cpu_processes,
-                         use_gpu, comet_workspace, comet_project,
-                         from_checkpoint, log_level)
+                         max_batches_per_epoch_training,
+                         max_batches_per_epoch_validation,
+                         patience,
+                         nb_cpu_processes, use_gpu, comet_workspace,
+                         comet_project, from_checkpoint, log_level)
 
     @property
     def params_for_checkpoint(self):
@@ -71,21 +66,13 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
         })
         return params
 
-    # init_comet as super
-    # estimate_nb_batches_per_epoch
-    # train_validate_and_save_loss  as super
-    # train_one_epoch               as super
-    # validate_one_epoch            as super
-
     @classmethod
     def init_from_checkpoint(
             cls, model: Learn2TrackModel, experiments_path, experiment_name,
-            train_batch_sampler: DWIMLBatchSampler,
-            train_batch_loader: BatchLoaderOneInput,
-            valid_batch_sampler: DWIMLBatchSampler,
-            valid_batch_loader: BatchLoaderOneInput,
-            checkpoint_state: dict, new_patience, new_max_epochs,
-            log_level):
+            batch_sampler: DWIMLBatchIDSampler,
+            batch_loader: DWIMLBatchLoaderOneInput,
+            checkpoint_state: dict, new_patience,
+            new_max_epochs, log_level):
         """
         During save_checkpoint(), checkpoint_state.pkl is saved. Loading it
         back offers a dict that can be used to instantiate an experiment and
@@ -95,8 +82,7 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
         # Use super's method but return this learn2track trainer as 'cls'.
         experiment = super(cls, cls).init_from_checkpoint(
             model, experiments_path, experiment_name,
-            train_batch_sampler, train_batch_loader,
-            valid_batch_sampler, valid_batch_loader,
+            batch_sampler, batch_loader,
             checkpoint_state, new_patience, new_max_epochs, log_level)
 
         return experiment
@@ -107,13 +93,6 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
             'clip_grad': self.clip_grad
         })
         return checkpoint_state
-
-    # save_checkpoint_state:       same as super
-    # _should quit                 same as user
-    # _update_taskman_report       same as user
-    # _save_log_from_array         same as user
-    # load_params_from_checkpoint  same as user
-    # check_early_stopping         same as user
 
     def fix_parameters(self):
         """
