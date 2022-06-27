@@ -6,6 +6,6 @@ from dwi_ml.training.utils.trainer import \
 def add_training_args(p):
     training_group = add_training_args_super(p)
     training_group.add_argument(
-        '--clip_grad', type=float, default=0,
+        '--clip_grad', type=float, default=None,
         help="Value to which the gradient norms to avoid exploding gradients."
-             "Default = 0 (not clipping).")
+             "\nDefault = None (not clipping).")

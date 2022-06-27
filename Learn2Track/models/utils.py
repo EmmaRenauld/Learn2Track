@@ -40,7 +40,7 @@ def add_model_args(p: argparse.ArgumentParser):
     em_size.add_argument(
         '--input_embedding_size', type=float, metavar='s',
         help="Size of the output after passing the previous dirs through the "
-             "embedding layer. Default: embedding_size=input_size.")
+             "embedding layer. \nDefault: embedding_size=input_size.")
     em_size.add_argument(
         '--input_embedding_size_ratio', type=float, metavar='r',
         help="Size of the output after passing the previous dirs through the "

@@ -4,7 +4,7 @@ author: Philippe Poulin (philippe.poulin2@usherbrooke.ca),
         refactored by Emmanuelle Renauld
 """
 import logging
-from typing import Union
+from typing import Union, List
 
 import torch
 
@@ -27,14 +27,15 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
                  experiment_name: str,
                  batch_sampler: DWIMLBatchIDSampler,
                  batch_loader: DWIMLBatchLoaderOneInput,
-                 learning_rate: float = 0.001,
-                 weight_decay: float = 0.01, max_epochs: int = 10,
+                 learning_rate: float = 0.001, weight_decay: float = 0.01,
+                 use_radam: bool = False, betas: List[float] = None,
+                 max_epochs: int = 10,
                  max_batches_per_epoch_training: int = 1000,
                  max_batches_per_epoch_validation: Union[int, None] = 1000,
                  patience: int = None,
                  nb_cpu_processes: int = 0, use_gpu: bool = False,
                  comet_workspace: str = None, comet_project: str = None,
-                 from_checkpoint: bool = False, clip_grad: float = 0,
+                 from_checkpoint: bool = False, clip_grad: float = None,
                  log_level=logging.WARNING):
         """
         Init trainer.
@@ -49,11 +50,10 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
 
         super().__init__(model, experiments_path, experiment_name,
                          batch_sampler, batch_loader, model_uses_streamlines,
-                         learning_rate, weight_decay, max_epochs,
-                         max_batches_per_epoch_training,
+                         learning_rate, weight_decay, use_radam, betas,
+                         max_epochs, max_batches_per_epoch_training,
                          max_batches_per_epoch_validation,
-                         patience,
-                         nb_cpu_processes, use_gpu, comet_workspace,
+                         patience, nb_cpu_processes, use_gpu, comet_workspace,
                          comet_project, from_checkpoint, log_level)
 
     @property
@@ -98,6 +98,6 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
         """
         In our case, clipping gradients to avoid exploding gradients in RNN
         """
-        if self.clip_grad:
+        if self.clip_grad is not None:
             torch.nn.utils.clip_grad_norm_(self.model.parameters(),
                                            self.clip_grad)

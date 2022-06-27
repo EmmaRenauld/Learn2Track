@@ -120,11 +120,13 @@ def init_from_args(args, sub_loggers_level):
             comet_project=args.comet_project,
             comet_workspace=args.comet_workspace,
             # TRAINING
-            learning_rate=args.learning_rate, max_epochs=args.max_epochs,
+            learning_rate=args.learning_rate, weight_decay=args.weight_decay,
+            use_radam=args.use_radam, betas=args.betas,
+            max_epochs=args.max_epochs,
             max_batches_per_epoch_training=args.max_batches_per_epoch_training,
             max_batches_per_epoch_validation=args.max_batches_per_epoch_validation,
             patience=args.patience, from_checkpoint=False,
-            weight_decay=args.weight_decay, clip_grad=args.clip_grad,
+            clip_grad=args.clip_grad,
             # MEMORY
             nb_cpu_processes=args.processes, use_gpu=args.use_gpu,
             log_level=args.logging)
