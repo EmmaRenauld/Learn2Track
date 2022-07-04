@@ -44,7 +44,7 @@ def test_execution_training_tracking(script_runner):
                             '--batch_size_units', 'nb_streamlines',
                             '--max_batches_per_epoch_training', '5',
                             '--max_batches_per_epoch_validation', '4',
-                            '--logging', 'INFO',
+                            '--logging', 'INFO', '--rnn_key', 'gru',
                             '--nb_previous_dirs', '1')
     assert ret.success
 

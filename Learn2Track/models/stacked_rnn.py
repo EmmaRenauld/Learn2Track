@@ -143,8 +143,12 @@ class StackedRNN(torch.nn.Module):
             Current implementation of the learn2track model calls this using
             packed sequence. We run the RNN on the packed data, but the
             normalization and dropout of their tensor version.
-        hidden_states : tuple of torch.Tensor
-            The current hidden states of the model ((h_(t-1), C_(t-1) for LSTM)
+        hidden_states : list[states]
+            One value per layer.
+            LSTM: States are tuples; (h_t, C_t)
+                Size of tensors are each [1, nb_streamlines, nb_neurons].
+            GRU: States are tensors; h_t.
+                Size of tensors are [1, nb_streamlines, nb_neurons].
 
         Returns
         -------
@@ -176,7 +180,7 @@ class StackedRNN(torch.nn.Module):
 
         # Arranging states
         if hidden_states is None:
-            hidden_states = (None,) * len(self.rnn_layers)
+            hidden_states = [None for _ in range(len(self.rnn_layers))]
 
         # Initializing variables that we will want to return
         out_hidden_states = []
@@ -185,10 +189,9 @@ class StackedRNN(torch.nn.Module):
         # Running forward on each layer:
         # linear --> layer norm --> dropout --> skip connection
         last_output = inputs
-        for i, (layer_i, states_i) in enumerate(zip(self.rnn_layers,
-                                                    hidden_states)):
+        for i in range(len(self.rnn_layers)):
             logger.debug('Applying StackedRnn layer #{}. Layer is: {}'
-                         .format(i, layer_i))
+                         .format(i, self.rnn_layers[i]))
 
             if i > 0 and was_packed:
                 # Packing back the output tensor from previous layer.
@@ -198,7 +201,8 @@ class StackedRNN(torch.nn.Module):
 
             # ** RNN **
             # Either as 3D tensor or as packedSequence
-            last_output, new_state_i = layer_i(last_output, states_i)
+            last_output, new_state_i = self.rnn_layers[i](last_output,
+                                                          hidden_states[i])
 
             # ** Other sub-layers **
             # Forward functions for layer_norm, dropout and skip take tensors
@@ -250,4 +254,4 @@ class StackedRNN(torch.nn.Module):
                 'Final skip connection: concatenating all outputs '
                 'but not input. Final shape is {}'
                 .format(last_output.shape))
-        return last_output, tuple(out_hidden_states)
+        return last_output, out_hidden_states

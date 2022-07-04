@@ -255,10 +255,12 @@ class Learn2TrackModel(MainModelWithPD):
                                    inputs.batch_sizes,
                                    inputs.sorted_indices,
                                    inputs.unsorted_indices)
-        out_hidden_recurrent_states : tuple
-            The last steps hidden states (h_n, C_n for LSTM) for each layer.
-            Tuple containing nb_layer tuples of 2 tensors (h_n, c_n) with
-            shape(h_n) = shape(c_n) = [1, nb_streamlines, layer_output_size]
+        out_hidden_recurrent_states : list[states]
+            One value per layer.
+            LSTM: States are tuples; (h_t, C_t)
+                Size of tensors are each [1, nb_streamlines, nb_neurons].
+            GRU: States are tensors; h_t.
+                Size of tensors are [1, nb_streamlines, nb_neurons].
         """
         try:
             # Apply model. This calls our model's forward function

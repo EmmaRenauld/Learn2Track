@@ -67,7 +67,7 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
 
         Parameters
         ----------
-        lines: List
+        line: List
             Result from the forward tracking, reversed. Single line: list of
             coordinates. Simulatenous tracking: list of list of coordinates.
         forward_dir: ndarray (3,)
@@ -105,12 +105,36 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
                  for line in lines]
 
         # Also, warning: creating a tensor from a list of np arrays is low.
-        _, self.hidden_recurrent_states = self.model(
+        outputs, self.hidden_recurrent_states = self.model(
             all_inputs, lines, is_tracking=False, return_state=True)
 
         logger.info("Done.")
 
         return super().prepare_backward(line, forward_dir)
+
+    def multiple_lines_update(self, rejected_line: int):
+        """Removing rejecte line from hidden states"""
+
+        # Hidden states: list[states] (One value per layer).
+
+        if self.model.rnn_key == 'lstm':
+            # LSTM: States are tuples; (h_t, C_t)
+            # Size of tensors are each [1, nb_streamlines, nb_neurons].
+            all_lines = list(range(self.hidden_recurrent_states[0][0].shape[1]))
+            all_lines.pop(rejected_line)
+
+            self.hidden_recurrent_states = [
+                (hidden_states[0][:, all_lines, :],
+                 hidden_states[1][:, all_lines, :]) for
+                hidden_states in self.hidden_recurrent_states]
+        else:
+            #   GRU: States are tensors; h_t.
+            #     Size of tensors are [1, nb_streamlines, nb_neurons].
+            all_lines = list(range(self.hidden_recurrent_states[0].shape[1]))
+            all_lines.pop(rejected_line)
+            self.hidden_recurrent_states = [
+                hidden_states[:, all_lines, :] for
+                hidden_states in self.hidden_recurrent_states]
 
     def _get_model_outputs_at_pos(self, n_pos):
         """
