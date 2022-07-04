@@ -371,6 +371,9 @@ class Learn2TrackModel(MainModelWithPD):
         targets = pack_sequence(targets, enforce_sorted=False).data
 
         # Computing loss
+        # Depends on model. Ex: regression: direct difference.
+        # Classification: log-likelihood.
+        # Gaussian: difference between distribution and target.
         mean_loss = self.direction_getter.compute_loss(
             model_outputs.to(self.device), targets.to(self.device))
 

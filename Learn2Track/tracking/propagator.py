@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 import logging
+from datetime import datetime
 
 import numpy as np
 import torch
 from dwi_ml.data.dataset.multi_subject_containers import MultisubjectSubset
+from dwi_ml.data.processing.volume.interpolation import prepare_batch_one_input
 from dwi_ml.models.main_models import MainModelAbstract
 from dwi_ml.tracking.propagator import DWIMLPropagatorOneInput
 
@@ -65,7 +67,7 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
 
         Parameters
         ----------
-        line: List
+        lines: List
             Result from the forward tracking, reversed. Single line: list of
             coordinates. Simulatenous tracking: list of list of coordinates.
         forward_dir: ndarray (3,)
@@ -78,28 +80,22 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
             only the seeding point (forward tracking failed), simply inverse
             the forward direction.
         """
-        logger.debug("Computing hidden RNN state at backward: run model on "
-                     "(reversed) first half.")
+        logger.info("Computing hidden RNN state at backward: run model on "
+                    "(reversed) first half.")
 
         # Must re-run the model from scratch to get the hidden states
         # Either load all timepoints in memory and call model once.
         # Or loop.
-        if isinstance(line[0], np.ndarray):  # List of coords = single tracking
-            # Using the loop meant for multiple tracking to actually get
-            # multiple positions
-            all_inputs = [self._prepare_inputs_at_pos(line)]
+        if isinstance(line[0], np.ndarray):  # List of coords; single tracking
             lines = [line]
         else:
-            all_inputs = []
-            for one_line in line:
-                all_inputs.append(self._prepare_inputs_at_pos(one_line))
             lines = line
 
+        all_inputs, _ = prepare_batch_one_input(
+            lines, self.dataset, self.subj_idx, self.volume_group,
+            self.neighborhood_points, self.device, logger=logger)
         # all_inputs is a list of
-        # nb_streamlines x n_points x tensor([1, nb_features])
-        # creating a batch of streamlines as tensor[nb_points, nb_features]
-        all_inputs = [torch.cat(streamline_inputs, dim=0)
-                      for streamline_inputs in all_inputs]
+        # nb_streamlines x tensor[nb_points, nb_features]
 
         # Running model. If we send is_tracking=True, will only compute the
         # previous dirs for the last point. To mimic training, we have to
@@ -111,6 +107,8 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
         # Also, warning: creating a tensor from a list of np arrays is low.
         _, self.hidden_recurrent_states = self.model(
             all_inputs, lines, is_tracking=False, return_state=True)
+
+        logger.info("Done.")
 
         return super().prepare_backward(line, forward_dir)
 
@@ -133,13 +131,23 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
 
         # Todo. This is not perfect yet. Sending data to new device at each new
         #  point. Could it already be a tensor in memory?
+        start_time = datetime.now()
         lines = [torch.tensor(np.vstack(line)).to(self.device) for line in
                  self.current_lines]
+        duration_sending_to_device = datetime.now() - start_time
 
         # For RNN however, we need to send the hidden state too.
+        start_time = datetime.now()
         model_outputs, hidden_states = self.model(
             inputs, lines, self.hidden_recurrent_states,
             return_state=True, is_tracking=True)
+        duration_running_model = datetime.now() - start_time
 
         self.hidden_recurrent_states = hidden_states
+
+        logger.debug("Time to send to device: {} s. Time to run the model: "
+                     "{} s."
+                     .format(duration_sending_to_device.total_seconds(),
+                             duration_running_model.total_seconds()))
+
         return model_outputs
