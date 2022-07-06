@@ -155,7 +155,7 @@ class StackedRNN(torch.nn.Module):
         last_output : Tensor
             The results. Shape is [nb_points, last layer size], or
             [nb_points, sum of layer sizes] if skip_connections.
-            * If inputs was a PackeSequence, you can get the packed results:
+            * If inputs was a PackedSequence, you can get the packed results:
             last_output = PackedSequence(last_output,
                                          inputs.batch_sizes,
                                          inputs.sorted_indices,

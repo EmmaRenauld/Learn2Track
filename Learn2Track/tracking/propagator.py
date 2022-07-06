@@ -108,32 +108,28 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
         outputs, self.hidden_recurrent_states = self.model(
             all_inputs, lines, is_tracking=False, return_state=True)
 
-        logger.info("Done.")
-
         return super().prepare_backward(line, forward_dir)
 
-    def multiple_lines_update(self, rejected_line: int):
+    def multiple_lines_update(self, lines_that_continue: list):
         """Removing rejecte line from hidden states"""
 
         # Hidden states: list[states] (One value per layer).
+        nb_streamlines = len(self.current_lines)
+        all_idx = np.zeros(nb_streamlines)
+        all_idx[lines_that_continue] = 1
 
         if self.model.rnn_key == 'lstm':
             # LSTM: States are tuples; (h_t, C_t)
-            # Size of tensors are each [1, nb_streamlines, nb_neurons].
-            all_lines = list(range(self.hidden_recurrent_states[0][0].shape[1]))
-            all_lines.pop(rejected_line)
-
+            # Size of tensors are each [1, nb_streamlines, nb_neurons]
             self.hidden_recurrent_states = [
-                (hidden_states[0][:, all_lines, :],
-                 hidden_states[1][:, all_lines, :]) for
+                (hidden_states[0][:, lines_that_continue, :],
+                 hidden_states[1][:, lines_that_continue, :]) for
                 hidden_states in self.hidden_recurrent_states]
         else:
             #   GRU: States are tensors; h_t.
             #     Size of tensors are [1, nb_streamlines, nb_neurons].
-            all_lines = list(range(self.hidden_recurrent_states[0].shape[1]))
-            all_lines.pop(rejected_line)
             self.hidden_recurrent_states = [
-                hidden_states[:, all_lines, :] for
+                hidden_states[:, lines_that_continue, :] for
                 hidden_states in self.hidden_recurrent_states]
 
     def _get_model_outputs_at_pos(self, n_pos):

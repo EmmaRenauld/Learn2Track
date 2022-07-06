@@ -381,16 +381,39 @@ class Learn2TrackModel(MainModelWithPD):
 
         return mean_loss
 
-    def get_tracking_direction_det(self, model_outputs):
-        next_dir = self.direction_getter.get_tracking_direction_det(
+    def get_tracking_direction_det(self, model_outputs,
+                                   streamline_lengths=None):
+        """
+        Params
+        ------
+        model_outputs: Tensor
+            Our model's previous layer's output.
+        streamline_lengths: list[int]
+            The length of all streamlines included in the batch, for easier
+            management of the results.
+
+        Returns
+        -------
+        next_dir: list[array(3,)]
+            Numpy arrays with x,y,z value, one per streamline data point.
+        """
+        next_dirs = self.direction_getter.get_tracking_direction_det(
             model_outputs)
 
-        # todo. Need to avoid the .cpu() if possible. See propagator's todo.
         # Bring back to cpu and get dir.
-        next_dir = next_dir.cpu().detach().numpy().squeeze()
-        return next_dir
+        next_dirs = next_dirs.cpu().detach().numpy()
 
-    def sample_tracking_direction_prob(self, model_outputs):
+        # next_dirs is of size [nb_points, 3]. Considering we are tracking,
+        # we want to separate it into a list of (3,).
+        # We can use split_array_at_lengths, but it gives a list of (1,3) and
+        # we need to squeeze it.
+        # List comprehension works with np arrays.
+        next_dirs = [x for x in next_dirs]
+
+        return next_dirs
+
+    def sample_tracking_direction_prob(self, model_outputs,
+                                       streamline_lengths=None):
         logging.debug("Getting a deterministic direction from {}"
                       .format(type(self.direction_getter)))
         return self.direction_getter.sample_tracking_direction_prob(
