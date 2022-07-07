@@ -38,7 +38,7 @@ def add_model_args(p: argparse.ArgumentParser):
              "Default: no_embedding (identity model).")
     em_size = inputs_g.add_mutually_exclusive_group()
     em_size.add_argument(
-        '--input_embedding_size', type=float, metavar='s',
+        '--input_embedding_size', type=int, metavar='s',
         help="Size of the output after passing the previous dirs through the "
              "embedding layer. \nDefault: embedding_size=input_size.")
     em_size.add_argument(

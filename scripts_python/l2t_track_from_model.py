@@ -90,9 +90,15 @@ def prepare_tracker(parser, args, hdf5_file, device,
                          "seeding masks! ({} vs {})"
                          .format(mask_data.shape, seed_data.shape))
 
-        step_size_vox_space = args.step_size / mask_res[0]
-        logging.info("Step size in voxel space will be {}"
-                     .format(step_size_vox_space))
+        if args.step_size == 0:
+            logging.warning("Step size 0 is understood here as 'keep model "
+                            "output as is'")
+            step_size_vox_space = 1
+            args.step_size = 1
+        else:
+            step_size_vox_space = args.step_size / mask_res[0]
+            logging.info("Step size in voxel space will be {}"
+                         .format(step_size_vox_space))
 
         logging.info("Loading subject's data.")
         subset, subj_idx = prepare_dataset_for_tracking(hdf5_file, args)

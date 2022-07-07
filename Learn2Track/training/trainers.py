@@ -99,5 +99,7 @@ class Learn2TrackTrainer(DWIMLTrainerOneInput):
         In our case, clipping gradients to avoid exploding gradients in RNN
         """
         if self.clip_grad is not None:
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(),
-                                           self.clip_grad)
+            total_norm = torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(), self.clip_grad)
+            if torch.isnan(total_norm):
+                raise ValueError("Exploding gradients. Experiment failed.")
