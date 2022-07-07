@@ -38,9 +38,9 @@ def prepare_arg_parser():
     add_dataset_args(p)
     add_args_batch_sampler(p)
     add_args_batch_loader(p)
-    add_training_args(p)
 
     # Specific to Learn2track:
+    add_training_args(p)
     add_model_args(p)
     add_direction_getter_args(p)
 

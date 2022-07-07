@@ -302,6 +302,7 @@ class Learn2TrackModel(MainModelWithPD):
         # RUNNING THE MODEL
         logger.debug("*** 1. Previous dir embedding, if any "
                      "(on packed_sequence's tensor!)...")
+        # This will normalize_directions, if asked.
         dirs = self.format_directions(streamlines)
         if is_tracking:
             point_idx = -1
@@ -336,6 +337,14 @@ class Learn2TrackModel(MainModelWithPD):
         # we will get a direction for each point.
         model_outputs = self.direction_getter(rnn_output)
         logger.debug("Output size: {}".format(model_outputs.shape[-1]))
+
+        if (self.normalize_directions and
+            (self.dg_key == 'cosine-regression' or
+             self.dg_key == 'l2-regression')):
+            # Hint. Can't use /= because inplace operation fails for backward
+            # gradient descent.
+            model_outputs = model_outputs / torch.linalg.norm(
+                model_outputs, dim=-1, keepdim=True)
 
         # Return the hidden states. Necessary for the generative
         # (tracking) part, done step by step.

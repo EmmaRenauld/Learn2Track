@@ -21,12 +21,12 @@ def add_model_args(p: argparse.ArgumentParser):
         '--prev_dirs_embedding_key', choices=keys_to_embeddings.keys(),
         default='no_embedding',
         help="Type of model for the previous directions embedding layer.\n"
-             "Default: no_embedding (identify model).")
+             "Default: no_embedding (identity model).")
     prev_dirs_g.add_argument(
         '--prev_dirs_embedding_size', type=int, metavar='s',
         help="Size of the output after passing the previous dirs through the "
              "embedding \nlayer. (Total size. Ex: --nb_previous_dirs 3, "
-             "--prev_dirs_embedding_size 8 \nwould compact 9 information into "
+             "--prev_dirs_embedding_size 8 \nwould compact 9 features into "
              "8.) Default: nb_previous_dirs*3.")
 
     inputs_g = p.add_argument_group(
@@ -35,7 +35,7 @@ def add_model_args(p: argparse.ArgumentParser):
         '--input_embedding_key', choices=keys_to_embeddings.keys(),
         default='no_embedding',
         help="Type of model for the inputs embedding layer.\n"
-             "Default: no_embedding (identify model).")
+             "Default: no_embedding (identity model).")
     em_size = inputs_g.add_mutually_exclusive_group()
     em_size.add_argument(
         '--input_embedding_size', type=float, metavar='s',
