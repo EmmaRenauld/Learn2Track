@@ -166,15 +166,20 @@ class StackedRNN(torch.nn.Module):
             The last step hidden states (h_(t-1), C_(t-1) for LSTM) for each
             layer.
         """
+
+        # If input is a tensor: RNN simply runs on it.
+        # Else: RNN knows what to do.
+
+        # We need to concatenate initial inputs with skip connections.
         if isinstance(inputs, Tensor):
             was_packed = False
-            inputs_tensor = inputs
+            init_inputs = inputs
         elif isinstance(inputs, list):
             raise TypeError("Unexpected input type! Data should not be a list."
                             "You could try using PackedSequences.")
         elif isinstance(inputs, PackedSequence):
             was_packed = True
-            inputs_tensor = inputs.data
+            init_inputs = inputs.data
         else:
             raise TypeError("Unexpected input type!")
 
@@ -184,6 +189,9 @@ class StackedRNN(torch.nn.Module):
 
         # Initializing variables that we will want to return
         out_hidden_states = []
+
+        # If skip connection, we need to keep in memory the output of all
+        # layers
         outputs = []
 
         # Running forward on each layer:
@@ -194,7 +202,8 @@ class StackedRNN(torch.nn.Module):
                          .format(i, self.rnn_layers[i]))
 
             if i > 0 and was_packed:
-                # Packing back the output tensor from previous layer.
+                # Packing back the output tensor from previous layer;
+                # only the .data was kept for the direction getter.
                 last_output = PackedSequence(last_output, inputs.batch_sizes,
                                              inputs.sorted_indices,
                                              inputs.unsorted_indices)
@@ -203,6 +212,7 @@ class StackedRNN(torch.nn.Module):
             # Either as 3D tensor or as packedSequence
             last_output, new_state_i = self.rnn_layers[i](last_output,
                                                           hidden_states[i])
+            out_hidden_states.append(new_state_i)
 
             # ** Other sub-layers **
             # Forward functions for layer_norm, dropout and skip take tensors
@@ -234,24 +244,25 @@ class StackedRNN(torch.nn.Module):
                              .format(last_output.shape))
 
             # Saving layer's last_output and states for later
-            outputs.append(last_output)
-            out_hidden_states.append(new_state_i)
+            if self.use_skip_connections:
+                # Keeping memory for the last layer's concatenation of all
+                # outputs.
+                outputs.append(last_output)
 
-            if self.use_skip_connections and i < len(self.rnn_layers) - 1:
+                # Intermediate layers:
                 # Adding skip connection, i.e. initial input.
                 # See here: https://arxiv.org/pdf/1308.0850v5.pdf
-                # Skip connection for last layer is different and will be done
-                # outside the loop.
-                last_output = torch.cat((last_output, inputs_tensor), dim=-1)
-                logger.debug('   Output size after skip connection: {}'
-                             .format(last_output.shape))
+                if i < len(self.rnn_layers) - 1:
+                    last_output = torch.cat((last_output, init_inputs),
+                                            dim=-1)
+                    logger.debug('   Output size after skip connection: {}'
+                                 .format(last_output.shape))
 
         # Final last_output
         if self.use_skip_connections:
             last_output = torch.cat(outputs, dim=-1)
 
             logger.debug(
-                'Final skip connection: concatenating all outputs '
-                'but not input. Final shape is {}'
-                .format(last_output.shape))
+                'Final skip connection: concatenating all outputs but not '
+                'input. Final shape is {}'.format(last_output.shape))
         return last_output, out_hidden_states

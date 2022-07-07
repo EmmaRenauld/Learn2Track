@@ -145,10 +145,13 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
         # Copying the beginning of super's method
         inputs = self._prepare_inputs_at_pos(n_pos)
 
+        # The model's memory of the beginning of the line is managed through
+        # the hidden states. We only need to send the current point, which
+        # is why inputs is only computed from n_pos.
+        # However, we do need the whole streamline to compute the n previous
+        # dirs.
         # In super, they add an additional point to mimic training. Here we
         # have already managed it in the forward by sending is_tracking.
-        # Converting lines to tensors
-
         # Todo. This is not perfect yet. Sending data to new device at each new
         #  point. Could it already be a tensor in memory?
         start_time = datetime.now()
@@ -158,12 +161,10 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
 
         # For RNN however, we need to send the hidden state too.
         start_time = datetime.now()
-        model_outputs, hidden_states = self.model(
+        model_outputs, self.hidden_recurrent_states = self.model(
             inputs, lines, self.hidden_recurrent_states,
             return_state=True, is_tracking=True)
         duration_running_model = datetime.now() - start_time
-
-        self.hidden_recurrent_states = hidden_states
 
         logger.debug("Time to send to device: {} s. Time to run the model: "
                      "{} s."
