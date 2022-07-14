@@ -133,7 +133,7 @@ class StackedRNN(torch.nn.Module):
         else:
             return self.layer_sizes[-1]
 
-    def forward(self, inputs: Union[Tensor, PackedSequence, List[Tensor]],
+    def forward(self, inputs: Union[Tensor, PackedSequence],
                 hidden_states: Tuple[Tensor, ...] = None):
         """
         Parameters

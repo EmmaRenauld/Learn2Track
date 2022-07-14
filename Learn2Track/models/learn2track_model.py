@@ -3,18 +3,17 @@ import logging
 from typing import Any, Union, List
 
 import torch
-from torch.nn.utils.rnn import PackedSequence, pack_sequence
+from torch.nn.utils.rnn import PackedSequence, pack_sequence, unpack_sequence
 
-from dwi_ml.models.direction_getter_models import keys_to_direction_getters
 from dwi_ml.models.embeddings_on_tensors import keys_to_embeddings
-from dwi_ml.models.main_models import MainModelWithPD
+from dwi_ml.models.main_models import MainModelWithPD, MainModelForTracking
 
 from Learn2Track.models.stacked_rnn import StackedRNN
 
 logger = logging.getLogger('model_logger')  # Same logger as Super.
 
 
-class Learn2TrackModel(MainModelWithPD):
+class Learn2TrackModel(MainModelWithPD, MainModelForTracking):
     """
     Recurrent tracking model.
 
@@ -111,20 +110,19 @@ class Learn2TrackModel(MainModelWithPD):
                 - For an axes neighborhood: type must be float. If it is an
                 iterable of floats, we will use a multi-radius neighborhood.
         normalize_directions: bool
-            If true, direction vectors are normalized (norm=1). If the step
-            size is fixed, it shouldn't make any difference. If streamlines are
-            compressed, in theory you should normalize, but you could hope that
-            not normalizing could give back to the algorithm a sense of
-            distance between points.
+            If true, direction vectors are normalized (norm=1).
+                1) For the previous dirs
+                2) For the targets. If the step size is fixed, it shouldn't
+                make any difference. If streamlines are compressed, in theory
+                you should normalize, but you could hope that not normalizing
+                could give back to the algorithm a sense of distance between
+                points.
+                3) For the model's outputs **if the dg_key is a regression
+                model**.
         ---
         [1] https://arxiv.org/pdf/1308.0850v5.pdf
         [2] https://arxiv.org/pdf/1607.06450.pdf
         """
-        super().__init__(experiment_name, nb_previous_dirs,
-                         prev_dirs_embedding_size, prev_dirs_embedding_key,
-                         normalize_directions, neighborhood_type,
-                         neighborhood_radius, log_level)
-
         self.input_embedding_key = input_embedding_key
         self.nb_features = nb_features
         self.use_skip_connection = use_skip_connection
@@ -132,16 +130,11 @@ class Learn2TrackModel(MainModelWithPD):
         self.rnn_key = rnn_key
         self.rnn_layer_sizes = rnn_layer_sizes
         self.dropout = dropout
-        self.dg_key = dg_key
-        self.dg_args = dg_args or {}
 
         # ----------- Checks
         if self.input_embedding_key not in keys_to_embeddings.keys():
             raise ValueError("Embedding choice for x data not understood: {}"
                              .format(self.embedding_key_x))
-        if self.dg_key not in keys_to_direction_getters.keys():
-            raise ValueError("Direction getter choice not understood: {}"
-                             .format(self.positional_encoding_key))
 
         # ---------- Instantiations
         # 1. Previous dirs embedding: prepared by super.
@@ -175,10 +168,22 @@ class Learn2TrackModel(MainModelWithPD):
             use_layer_normalization=use_layer_normalization,
             dropout=dropout)
 
-        # 4. Direction getter
-        direction_getter_cls = keys_to_direction_getters[dg_key]
-        self.direction_getter = direction_getter_cls(
-            self.rnn_model.output_size, **self.dg_args)
+        # 4. Direction getter: instantiated by super.
+
+        # Calling super init last because we needed the rnn output size.
+        super().__init__(experiment_name=experiment_name,
+                         neighborhood_type=neighborhood_type,
+                         neighborhood_radius=neighborhood_radius,
+                         # For super MainModelWithPD:
+                         nb_previous_dirs=nb_previous_dirs,
+                         prev_dirs_embedding_size=prev_dirs_embedding_size,
+                         prev_dirs_embedding_key=prev_dirs_embedding_key,
+                         normalize_prev_dirs=normalize_directions,
+                         # For super MainModelForTracking:
+                         normalize_targets=normalize_directions,
+                         dg_key=dg_key, dg_args=dg_args,
+                         dg_input_size=self.rnn_model.output_size,
+                         log_level=log_level)
 
     @property
     def params_for_json_prints(self):
@@ -189,7 +194,6 @@ class Learn2TrackModel(MainModelWithPD):
                 self.prev_dirs_embedding else None,
             'input_embedding': self.input_embedding.params,
             'rnn_model': self.rnn_model.params,
-            'direction_getter': self.direction_getter.params
         })
         return params
 
@@ -302,15 +306,14 @@ class Learn2TrackModel(MainModelWithPD):
         # RUNNING THE MODEL
         logger.debug("*** 1. Previous dir embedding, if any "
                      "(on packed_sequence's tensor!)...")
-        # This will normalize_directions, if asked.
-        dirs = self.format_directions(streamlines)
+
         if is_tracking:
             point_idx = -1
         else:
             # Currently training. We need all the previous directions.
             point_idx = None
         n_prev_dirs_embedded = self.compute_and_embed_previous_dirs(
-            dirs, unpack_results=False, point_idx=point_idx)
+            streamlines, unpack_results=False, point_idx=point_idx)
 
         logger.debug("*** 2. Inputs embedding (on packed_sequence's "
                      "tensor!)...")
@@ -338,19 +341,30 @@ class Learn2TrackModel(MainModelWithPD):
         model_outputs = self.direction_getter(rnn_output)
         logger.debug("Output size: {}".format(model_outputs.shape[-1]))
 
-        if (self.normalize_directions and
-            (self.dg_key == 'cosine-regression' or
-             self.dg_key == 'l2-regression')):
+        # The two sections below should only happen for regression models
+        if self.normalize_outputs:
             # Hint. Can't use /= because inplace operation fails for backward
             # gradient descent.
             model_outputs = model_outputs / torch.linalg.norm(
                 model_outputs, dim=-1, keepdim=True)
 
+        if self.save_estimated_outputs:
+            self._save_estimated_outputs(streamlines, model_outputs)
+
         # Return the hidden states. Necessary for the generative
         # (tracking) part, done step by step.
         return model_outputs, out_hidden_recurrent_states
 
-    def compute_loss(self, model_outputs: Any, streamlines: list):
+    def _format_output_to_streamlines(self, model_outputs):
+        """
+        model_outputs: tuple
+            (model_outputs, batch_sizes, sorted_indices, unsorted_indices)
+        """
+        output_streamlines_packed = PackedSequence(**model_outputs)
+
+        return unpack_sequence(output_streamlines_packed)
+
+    def compute_loss(self, model_outputs: Any, target_streamlines: list):
         """
         Computes the loss function using the provided outputs and targets.
         Returns the mean loss (loss averaged across timesteps and sequences).
@@ -363,7 +377,7 @@ class Learn2TrackModel(MainModelWithPD):
             cosine regression direction getter return a simple Tensor. Please
             make sure that the chosen direction_getter's output size fits with
             the target ou the target's data if it's a PackedSequence.
-        streamlines : List
+        target_streamlines : List
             The target values for the batch (the streamlines).
 
         Returns
@@ -372,11 +386,7 @@ class Learn2TrackModel(MainModelWithPD):
             The loss between the outputs and the targets, averaged across
             timesteps and sequences.
         """
-        # Computing directions. Note that if previous dirs are used, this was
-        # already computed when calling the forward method. We could try to
-        # prevent double calculations, but a little complicated in actual class
-        # structure.
-        targets = self.format_directions(streamlines)
+        targets = self.compute_target_directions(target_streamlines)
 
         # Packing dirs and using the .data
         targets = pack_sequence(targets, enforce_sorted=False).data
