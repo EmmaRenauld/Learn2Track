@@ -86,11 +86,12 @@ def prepare_model(args, dg_args):
     with Timer("\n\nPreparing model", newline=True, color='yellow'):
         # INPUTS: verifying args
         model = Learn2TrackModel(
-            args.experiment_name,
+            experiment_name=args.experiment_name,
             # PREVIOUS DIRS
             prev_dirs_embedding_key=args.prev_dirs_embedding_key,
             prev_dirs_embedding_size=args.prev_dirs_embedding_size,
             nb_previous_dirs=args.nb_previous_dirs,
+            normalize_prev_dirs=args.normalize_directions,
             # INPUTS
             input_embedding_key=args.input_embedding_key,
             input_embedding_size=args.input_embedding_size,
@@ -101,10 +102,10 @@ def prepare_model(args, dg_args):
             dropout=args.dropout,
             use_layer_normalization=args.use_layer_normalization,
             use_skip_connection=args.use_skip_connection,
-            # DIRECTION GETTER
+            # TRACKING MODEL
             dg_key=args.dg_key, dg_args=dg_args,
+            normalize_targets=args.normalize_directions,
             # Other
-            normalize_directions=args.normalize_directions,
             neighborhood_type=args.neighborhood_type,
             neighborhood_radius=args.neighborhood_radius)
 

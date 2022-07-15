@@ -5,6 +5,8 @@ from datetime import datetime
 import numpy as np
 import torch
 from dwi_ml.data.dataset.multi_subject_containers import MultisubjectSubset
+from dwi_ml.data.processing.streamlines.post_processing import \
+    compute_directions
 from dwi_ml.data.processing.volume.interpolation import prepare_batch_one_input
 from dwi_ml.models.main_models import MainModelAbstract
 from dwi_ml.tracking.propagator import DWIMLPropagatorOneInput
@@ -155,14 +157,15 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
         # Todo. This is not perfect yet. Sending data to new device at each new
         #  point. Could it already be a tensor in memory?
         start_time = datetime.now()
-        lines = [torch.tensor(np.vstack(line)).to(self.device) for line in
-                 self.current_lines]
+        lines = [torch.as_tensor(s) for s in self.current_lines]
+        dirs = compute_directions(lines, self.device)
+
         duration_sending_to_device = datetime.now() - start_time
 
         # For RNN however, we need to send the hidden state too.
         start_time = datetime.now()
         model_outputs, self.hidden_recurrent_states = self.model(
-            inputs, lines, self.hidden_recurrent_states,
+            inputs, dirs, self.hidden_recurrent_states,
             return_state=True, is_tracking=True)
         duration_running_model = datetime.now() - start_time
 
