@@ -7,15 +7,18 @@ from dwi_ml.data.processing.streamlines.post_processing import \
     normalize_directions
 from torch.nn.utils.rnn import PackedSequence, pack_sequence, unpack_sequence
 
-from dwi_ml.models.embeddings_on_tensors import keys_to_embeddings
-from dwi_ml.models.main_models import MainModelWithPD, MainModelForTracking
+from dwi_ml.models.embeddings_on_tensors import keys_to_embeddings as \
+    keys_to_tensor_embeddings
+from dwi_ml.models.main_models import (
+    ModelWithPreviousDirections, ModelForTracking, ModelWithNeighborhood)
 
 from Learn2Track.models.stacked_rnn import StackedRNN
 
 logger = logging.getLogger('model_logger')  # Same logger as Super.
 
 
-class Learn2TrackModel(MainModelWithPD, MainModelForTracking):
+class Learn2TrackModel(ModelWithPreviousDirections, ModelForTracking,
+                       ModelWithNeighborhood):
     """
     Recurrent tracking model.
 
@@ -32,7 +35,7 @@ class Learn2TrackModel(MainModelWithPD, MainModelForTracking):
                  nb_previous_dirs: int = 0,
                  prev_dirs_embedding_size: int = None,
                  prev_dirs_embedding_key: str = None,
-                 normalize_prev_dirs : bool = True,
+                 normalize_prev_dirs: bool = True,
                  # INPUTS
                  input_embedding_key: str = 'no_embedding',
                  input_embedding_size: int = None,
@@ -130,6 +133,13 @@ class Learn2TrackModel(MainModelWithPD, MainModelForTracking):
         [1] https://arxiv.org/pdf/1308.0850v5.pdf
         [2] https://arxiv.org/pdf/1607.06450.pdf
         """
+        if prev_dirs_embedding_key == 'no_embedding':
+            if prev_dirs_embedding_size is None:
+                prev_dirs_embedding_size = 3 * nb_previous_dirs
+            elif prev_dirs_embedding_size != 3*nb_previous_dirs:
+                raise ValueError("To use identity embedding, the output size "
+                                 "must be the same as the input size!")
+
         super().__init__(
             experiment_name=experiment_name,
             neighborhood_type=neighborhood_type,
@@ -138,6 +148,7 @@ class Learn2TrackModel(MainModelWithPD, MainModelForTracking):
             nb_previous_dirs=nb_previous_dirs,
             prev_dirs_embedding_size=prev_dirs_embedding_size,
             prev_dirs_embedding_key=prev_dirs_embedding_key,
+            _keys_to_embeddings=keys_to_tensor_embeddings,
             normalize_prev_dirs=normalize_prev_dirs,
             # For super MainModelForTracking:
             normalize_targets=normalize_targets, dg_key=dg_key,
@@ -153,7 +164,7 @@ class Learn2TrackModel(MainModelWithPD, MainModelForTracking):
         self.dropout = dropout
 
         # ----------- Checks
-        if self.input_embedding_key not in keys_to_embeddings.keys():
+        if self.input_embedding_key not in keys_to_tensor_embeddings.keys():
             raise ValueError("Embedding choice for x data not understood: {}"
                              .format(self.embedding_key_x))
 
@@ -174,7 +185,7 @@ class Learn2TrackModel(MainModelWithPD, MainModelForTracking):
         else:
             self.input_embedding_size = self.input_size
 
-        input_embedding_cls = keys_to_embeddings[input_embedding_key]
+        input_embedding_cls = keys_to_tensor_embeddings[input_embedding_key]
         self.input_embedding = input_embedding_cls(
             input_size=self.input_size,
             output_size=self.input_embedding_size)

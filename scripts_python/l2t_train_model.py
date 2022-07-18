@@ -60,17 +60,7 @@ def init_from_args(args, sub_loggers_level):
     # (Direction getter)
     if not args.dg_dropout and args.dropout:
         args.dg_dropout = args.dropout
-    # (Neighborhood)
     dg_args = check_args_direction_getter(args)
-    if args.grid_radius:
-        args.neighborhood_radius = args.grid_radius
-        args.neighborhood_type = 'grid'
-    elif args.sphere_radius:
-        args.neighborhood_radius = args.sphere_radius
-        args.neighborhood_type = 'axes'
-    else:
-        args.neighborhood_radius = None
-        args.neighborhood_type = None
     # (Nb features)
     input_group_idx = dataset.volume_groups.index(args.input_group_name)
     args.nb_features = dataset.nb_features[input_group_idx]
@@ -80,7 +70,7 @@ def init_from_args(args, sub_loggers_level):
     # Preparing the batch samplers
     with Timer("\nPreparing batch sampler...", newline=True, color='green'):
         batch_sampler = DWIMLBatchIDSampler(
-            dataset, streamline_group_name=args.streamline_group_name,
+            dataset=dataset, streamline_group_name=args.streamline_group_name,
             batch_size_training=args.batch_size_training,
             batch_size_validation=args.batch_size_validation,
             batch_size_units=args.batch_size_units,
@@ -95,7 +85,7 @@ def init_from_args(args, sub_loggers_level):
     # Preparing the batch loaders
     with Timer("\nPreparing batch loader...", newline=True, color='pink'):
         batch_loader = DWIMLBatchLoaderOneInput(
-            dataset, input_group_name=args.input_group_name,
+            dataset=dataset, input_group_name=args.input_group_name,
             streamline_group_name=args.streamline_group_name,
             # STREAMLINES PREPROCESSING
             step_size=args.step_size, compress=args.compress,

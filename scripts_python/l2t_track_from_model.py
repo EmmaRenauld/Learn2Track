@@ -21,6 +21,7 @@ from scilpy.image.datasets import DataVolume
 from scilpy.io.utils import (add_sphere_arg,
                              assert_inputs_exist, assert_outputs_exist,
                              verify_compression_th)
+from scilpy.tracking.seed import SeedGenerator
 from scilpy.tracking.utils import (add_seeding_options,
                                    verify_streamline_length_options,
                                    verify_seed_options, add_out_options)
@@ -28,7 +29,6 @@ from scilpy.tracking.utils import (add_seeding_options,
 from dwi_ml.data.dataset.utils import add_dataset_args
 from dwi_ml.experiment_utils.prints import format_dict_to_str, add_logging_arg
 from dwi_ml.experiment_utils.timer import Timer
-from dwi_ml.tracking.seed import DWIMLSeedGenerator
 from dwi_ml.tracking.tracker import DWIMLTracker
 from dwi_ml.tracking.utils import (add_mandatory_options_tracking,
                                    add_tracking_options,
@@ -105,7 +105,7 @@ def prepare_tracker(parser, args, hdf5_file, device,
 
         logging.info("Loading model.")
         model = Learn2TrackModel.load(args.experiment_path + '/model',
-                                      log_level=sub_logger_level)
+                                      log_level='DEBUG')
         logging.info("* Formatted model: " +
                      format_dict_to_str(model.params_for_json_prints))
 
@@ -134,7 +134,9 @@ def _prepare_seed_generator(parser, args, hdf_handle):
     seed_data = np.array(seeding_group['data'], dtype=np.float32)
     seed_res = np.array(seeding_group.attrs['voxres'], dtype=np.float32)
 
-    seed_generator = DWIMLSeedGenerator(seed_data, seed_res)
+    # NOTE: TRAINER USES STREAMLINES COORDINATES IN VOXEL SPACE, TO CORNER.
+    seed_generator = SeedGenerator(seed_data, seed_res,
+                                   space=Space.VOX, origin=Origin('corner'))
 
     if len(seed_generator.seeds_vox) == 0:
         parser.error('Seed mask "{}" does not have any voxel with value > 0.'
@@ -143,12 +145,12 @@ def _prepare_seed_generator(parser, args, hdf_handle):
     if args.npv:
         # toDo. Not really nb seed per voxel, just in average. Waiting for this
         #  to be modified in scilpy, and we will adapt here.
-        nbr_seeds = len(seed_generator.seeds) * args.npv
+        nbr_seeds = len(seed_generator.seeds_vox) * args.npv
     elif args.nt:
         nbr_seeds = args.nt
     else:
         # Setting npv = 1.
-        nbr_seeds = len(seed_generator.seeds)
+        nbr_seeds = len(seed_generator.seeds_vox)
 
     return seed_generator, nbr_seeds, seed_res, seed_data
 

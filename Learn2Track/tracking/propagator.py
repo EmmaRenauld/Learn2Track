@@ -62,7 +62,7 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
 
         return super().prepare_forward(seeding_pos)
 
-    def prepare_backward(self, line, forward_dir):
+    def prepare_backward(self, line, forward_dir, multiple_lines=False):
         """
         Preparing backward. We need to recompute the hidden recurrent state
         for this half-streamline.
@@ -88,7 +88,7 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
         # Must re-run the model from scratch to get the hidden states
         # Either load all timepoints in memory and call model once.
         # Or loop.
-        if isinstance(line[0], np.ndarray):  # List of coords; single tracking
+        if not multiple_lines:
             lines = [line]
         else:
             lines = line
@@ -110,7 +110,8 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
         outputs, self.hidden_recurrent_states = self.model(
             all_inputs, lines, is_tracking=False, return_state=True)
 
-        return super().prepare_backward(line, forward_dir)
+        # Now that hidden state is updated, the rest can continue as before
+        return super().prepare_backward(line, forward_dir, multiple_lines)
 
     def multiple_lines_update(self, lines_that_continue: list):
         """Removing rejecte line from hidden states"""

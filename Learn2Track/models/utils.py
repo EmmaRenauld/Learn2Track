@@ -2,10 +2,9 @@
 import argparse
 import logging
 
-from dwi_ml.data.processing.space.neighborhood import add_args_neighborhood
 from dwi_ml.experiment_utils.prints import format_dict_to_str
 from dwi_ml.experiment_utils.timer import Timer
-from dwi_ml.models.embeddings_on_packed_sequences import keys_to_embeddings
+from dwi_ml.models.embeddings_on_tensors import keys_to_embeddings
 
 from Learn2Track.models.learn2track_model import Learn2TrackModel
 
@@ -13,24 +12,11 @@ from Learn2Track.models.learn2track_model import Learn2TrackModel
 def add_model_args(p: argparse.ArgumentParser):
     prev_dirs_g = p.add_argument_group(
         "Learn2track model: Previous directions embedding layer")
-    prev_dirs_g.add_argument(
-        '--nb_previous_dirs', type=int, default=0, metavar='n',
-        help="Concatenate the n previous streamline directions to the input "
-             "vector. \nDefault: 0")
-    prev_dirs_g.add_argument(
-        '--prev_dirs_embedding_key', choices=keys_to_embeddings.keys(),
-        default='no_embedding',
-        help="Type of model for the previous directions embedding layer.\n"
-             "Default: no_embedding (identity model).")
-    prev_dirs_g.add_argument(
-        '--prev_dirs_embedding_size', type=int, metavar='s',
-        help="Size of the output after passing the previous dirs through the "
-             "embedding \nlayer. (Total size. Ex: --nb_previous_dirs 3, "
-             "--prev_dirs_embedding_size 8 \nwould compact 9 features into "
-             "8.) Default: nb_previous_dirs*3.")
+    Learn2TrackModel.add_args_model_with_pd(prev_dirs_g, keys_to_embeddings)
 
     inputs_g = p.add_argument_group(
         "Learn2track model: Main inputs embedding layer")
+    Learn2TrackModel.add_neighborhood_args_to_parser(inputs_g)
     inputs_g.add_argument(
         '--input_embedding_key', choices=keys_to_embeddings.keys(),
         default='no_embedding',
@@ -79,7 +65,6 @@ def add_model_args(p: argparse.ArgumentParser):
              "compressed, in theory you should normalize, \nbut you could "
              "hope that not normalizing could give back to the algorithm a \n"
              "sense of distance between points.")
-    add_args_neighborhood(g)
 
 
 def prepare_model(args, dg_args):

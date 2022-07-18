@@ -10,14 +10,15 @@ import torch
 
 from dwi_ml.training.batch_samplers import DWIMLBatchIDSampler
 from dwi_ml.training.batch_loaders import DWIMLBatchLoaderOneInput
-from dwi_ml.training.trainers import DWIMLTrainerOneInput, DWIMLAbstractTrainer
+from dwi_ml.training.trainers import (
+    DWIMLTrainerOneInput, DWIMLTrainerForTrackerModel)
 
 from Learn2Track.models.learn2track_model import Learn2TrackModel
 
 logger = logging.getLogger('trainer_logger')
 
 
-class Learn2TrackTrainer(DWIMLTrainerOneInput, DWIMLAbstractTrainer):
+class Learn2TrackTrainer(DWIMLTrainerOneInput, DWIMLTrainerForTrackerModel):
     """
     Trainer for Learn2Track. Nearly the same as in dwi_ml, but we add the
     clip_grad parameter to avoid exploding gradients, typical in RNN.
