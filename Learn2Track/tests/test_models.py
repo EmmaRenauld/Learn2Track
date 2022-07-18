@@ -3,6 +3,8 @@ import logging
 
 import numpy as np
 import torch
+from dwi_ml.data.processing.streamlines.post_processing import \
+    compute_directions
 from torch.nn.utils.rnn import pack_sequence
 
 from Learn2Track.models.learn2track_model import Learn2TrackModel
@@ -59,9 +61,10 @@ def test_learn2track():
 
     model = Learn2TrackModel('test', nb_features=4, rnn_layer_sizes=[3, 3],
                              log_level='DEBUG')
+    dirs = compute_directions(fake_s)
 
     # Testing forward. No previous dirs
-    model(fake_x, fake_s)
+    model(fake_x, dirs)
 
 
 if __name__ == '__main__':

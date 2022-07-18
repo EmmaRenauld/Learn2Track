@@ -74,6 +74,8 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
             coordinates. Simulatenous tracking: list of list of coordinates.
         forward_dir: ndarray (3,)
             v_in chosen at the forward step.
+        multiple_lines: bool
+            If true, using version simulteanous tracking.
 
         Returns
         -------
@@ -105,10 +107,11 @@ class RecurrentPropagator(DWIMLPropagatorOneInput):
         lines = [torch.cat((torch.tensor(np.vstack(line)),
                             torch.zeros(1, 3)), dim=0)
                  for line in lines]
+        dirs = compute_directions(lines, self.device)
 
         # Also, warning: creating a tensor from a list of np arrays is low.
         outputs, self.hidden_recurrent_states = self.model(
-            all_inputs, lines, is_tracking=False, return_state=True)
+            all_inputs, dirs, is_tracking=False, return_state=True)
 
         # Now that hidden state is updated, the rest can continue as before
         return super().prepare_backward(line, forward_dir, multiple_lines)

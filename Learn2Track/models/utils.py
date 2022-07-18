@@ -12,7 +12,7 @@ from Learn2Track.models.learn2track_model import Learn2TrackModel
 def add_model_args(p: argparse.ArgumentParser):
     prev_dirs_g = p.add_argument_group(
         "Learn2track model: Previous directions embedding layer")
-    Learn2TrackModel.add_args_model_with_pd(prev_dirs_g, keys_to_embeddings)
+    Learn2TrackModel.add_args_model_with_pd(prev_dirs_g)
 
     inputs_g = p.add_argument_group(
         "Learn2track model: Main inputs embedding layer")
@@ -58,13 +58,7 @@ def add_model_args(p: argparse.ArgumentParser):
              "https://arxiv.org/pdf/1607.06450.pdf")
 
     g = p.add_argument_group("Learn2track model: others")
-    g.add_argument(
-        '--normalize_directions', action='store_true',
-        help="If true, directions will be normalized. If the step size is "
-             "fixed, it shouldn't \nmake any difference. If streamlines are "
-             "compressed, in theory you should normalize, \nbut you could "
-             "hope that not normalizing could give back to the algorithm a \n"
-             "sense of distance between points.")
+    Learn2TrackModel.add_args_tracking_model(g)
 
 
 def prepare_model(args, dg_args):

@@ -42,7 +42,6 @@ def prepare_arg_parser():
     # Specific to Learn2track:
     add_training_args(p)
     add_model_args(p)
-    add_direction_getter_args(p)
 
     add_logging_arg(p)
 

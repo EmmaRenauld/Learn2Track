@@ -148,7 +148,6 @@ class Learn2TrackModel(ModelWithPreviousDirections, ModelForTracking,
             nb_previous_dirs=nb_previous_dirs,
             prev_dirs_embedding_size=prev_dirs_embedding_size,
             prev_dirs_embedding_key=prev_dirs_embedding_key,
-            _keys_to_embeddings=keys_to_tensor_embeddings,
             normalize_prev_dirs=normalize_prev_dirs,
             # For super MainModelForTracking:
             normalize_targets=normalize_targets, dg_key=dg_key,
@@ -338,28 +337,34 @@ class Learn2TrackModel(ModelWithPreviousDirections, ModelForTracking,
                      is_tracking, streamlines, save_estimated_outputs, ref,
                      estimated_output_path, space, origin):
 
-        logger.debug("*** 1. Previous dir embedding, if any "
-                     "(on packed_sequence's tensor!)...")
+        if self.nb_previous_dirs > 0:
+            logger.debug("*** 1. {} previous dirs - Embedding = {}..."
+                         .format(self.nb_previous_dirs,
+                                 self.prev_dirs_embedding_key))
 
-        # During training, we need all the previous n directions, during
-        # tracking, the last one only.
-        point_idx = -1 if is_tracking else None
+            # During training, we need all the previous n directions, during
+            # tracking, the last one only.
+            point_idx = -1 if is_tracking else None
 
-        n_prev_dirs_embedded = self.normalize_and_embed_previous_dirs(
-            dirs, unpack_results=False,
-            point_idx=point_idx)  # type: PackedSequence
+            # Result will be a packed sequence.
+            n_prev_dirs_embedded = self.normalize_and_embed_previous_dirs(
+                dirs, unpack_results=False, point_idx=point_idx)
+            logger.debug("Output size: {}"
+                         .format(n_prev_dirs_embedded.data.shape))
+        else:
+            n_prev_dirs_embedded = None
 
-        logger.debug("*** 2. Inputs embedding (on packed_sequence's "
-                     "tensor!)...")
+        logger.debug("*** 2. Inputs: Embedding = {}"
+                     .format(self.input_embedding_key))
         # Packing inputs and saving info
         inputs = pack_sequence(inputs, enforce_sorted=False).to(self.device)
         batch_sizes = inputs.batch_sizes
         sorted_indices = inputs.sorted_indices
         unsorted_indices = inputs.unsorted_indices
 
-        logger.debug("Input size: {}".format(inputs.data.shape[-1]))
+        logger.debug("Input size: {}".format(inputs.data.shape))
         inputs = self.input_embedding(inputs.data)
-        logger.debug("Output size: {}".format(inputs.shape[-1]))
+        logger.debug("Output size: {}".format(inputs.shape))
 
         logger.debug("*** 3. Concatenating previous dirs and inputs's "
                      "embeddings...")
